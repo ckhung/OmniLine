@@ -14,8 +14,7 @@ from omniline.chat_service import (
     resolve_contact_names,
 )
 from omniline.tui import TuiState
-from omniline.ufl_contact import uflContact
-from omniline.ufl_group import uflGroup
+from omniline.ufl import repeat_pattern, uflContact, uflGroup
 
 CONTACT_MID = "u" + "1" * 32
 GROUP_MID = "c" + "2" * 32
@@ -191,6 +190,11 @@ def test_empty_chat_list_ignores_content_and_profile_activation():
 
     assert state.mode == "list"
     assert state.selected_chat is None
+
+
+def test_repeat_pattern_fills_requested_display_width():
+    assert repeat_pattern("* ", 7) == "* * * *"
+    assert repeat_pattern("ab", 5) == "ababa"
 
 
 def test_filtered_list_can_be_restored_and_counts_refreshed():

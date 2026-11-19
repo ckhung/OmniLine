@@ -6,10 +6,7 @@ from typing import Any
 
 from okline.entities import Contact, Group
 
-from .ufl_chat import uflChat
-from .ufl_contact import uflContact
-from .ufl_group import uflGroup
-from .ufl_message import uflMessage
+from .ufl import uflChat, uflContact, uflGroup, uflMessage
 
 MESSAGE_BOX_BATCH_SIZE = 100
 

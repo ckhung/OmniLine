@@ -16,7 +16,6 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.screen import Point
 from prompt_toolkit.styles import Style
-from prompt_toolkit.utils import get_cwidth
 
 from .chat_service import (
     list_chats,
@@ -25,9 +24,16 @@ from .chat_service import (
     refresh_unread_counts,
     resolve_contact_names,
 )
-from .ufl_chat import TAIPEI, uflChat
-from .ufl_group import uflGroup
-from .ufl_message import uflMessage
+from .ufl import (
+    TAIPEI,
+    fit_display_name,
+    format_unread_count,
+    repeat_pattern,
+    sort_chats,
+    uflChat,
+    uflGroup,
+    uflMessage,
+)
 
 
 @dataclass
@@ -67,19 +73,20 @@ class TuiState:
         return [chat for chat in self.chats if chat.pinned]
 
     @property
+    def rows(self) -> list[uflChat]:
+        return sort_chats(self.chats, self.query)
+
+    @property
     def ordinary(self) -> list[uflChat]:
-        chats = [chat for chat in self.chats if not chat.pinned]
-        if self.query:
-            chats = [chat for chat in chats if self.query in chat.name]
-        return sorted(chats, key=lambda chat: chat.last_message_time or "", reverse=True)
+        return [chat for chat in self.rows if not chat.pinned]
 
     @property
     def displayed_count(self) -> int:
-        return len(self.pinned) + len(self.ordinary)
+        return len(self.rows)
 
     @property
     def current_chat(self) -> uflChat | None:
-        rows = self.pinned + self.ordinary
+        rows = self.rows
         return rows[self.cursor] if rows and self.cursor < len(rows) else None
 
     @property
@@ -213,10 +220,7 @@ class TuiState:
         chat = self.selected_chat
         assert chat is not None
         reply_id = self.reply_targets.get(self.content_cursor_line)
-        is_new_message = (
-            self.content_cursor_line == len(self.content_lines) - 1
-            and not "".join(text for _, text in self.content_lines[-1]).strip()
-        )
+        is_new_message = self.content_cursor_line == len(self.content_lines) - 1
         if not reply_id and not is_new_message:
             return
         self.compose_mode = "reply" if reply_id else "new"
@@ -376,7 +380,7 @@ class TuiState:
                 for line in wrapped:
                     padded = (" " * 4 + line) if own else (line.ljust(text_width) + " " * 4)
                     lines.append([("class:own" if own else "class:other", padded)])
-        lines.append([("", "")])
+        lines.append([("class:anchor", repeat_pattern("* ", width))])
         return lines
 
     def list_fragments(self) -> list[tuple[str, str]]:
@@ -390,9 +394,8 @@ class TuiState:
         fragments: list[tuple[str, str]] = []
         for local_index, chat in enumerate(rows):
             global_index = local_index if local_index < len(favorites) else first_ordinary + local_index - len(favorites)
-            name, name_padding = self._fit_name(chat.name or chat.id, name_width)
-            count = chat.unread_count or 0
-            count_field = "    " if count == 0 else "*** " if count > 999 else f"{count:3d} "
+            name, name_padding = fit_display_name(chat.name or chat.id, name_width)
+            count_field = format_unread_count(chat.unread_count)
             selected = global_index == self.cursor
             if selected and self.mode == "list":
                 style = "class:selected"
@@ -411,20 +414,6 @@ class TuiState:
                 fragments.append((style, count_field + name + name_padding + "\n"))
         return fragments or [("class:dim", "(no chats)\n")]
 
-    @staticmethod
-    def _fit_name(name: str, width: int) -> tuple[str, str]:
-        """Fit a display name by terminal cells, not Python code points."""
-        if get_cwidth(name) <= width:
-            return name, " " * (width - get_cwidth(name))
-        if width == 1:
-            return "…", ""
-        visible = ""
-        for char in name:
-            if get_cwidth(visible + char + "…") > width:
-                break
-            visible += char
-        display = visible + "…"
-        return display, " " * (width - get_cwidth(display))
 
     def profile_fragments(self) -> list[tuple[str, str]]:
         chat = self.selected_chat or self.current_chat
@@ -454,7 +443,9 @@ class TuiState:
         end = start + self.content_height()
         fragments: list[tuple[str, str]] = []
         for index, line in enumerate(self.content_lines[start:end], start):
-            if index == self.content_cursor_line and all(
+            if index == self.content_cursor_line and index == len(self.content_lines) - 1:
+                line = [("class:anchor-cursor", text) for _, text in line]
+            elif index == self.content_cursor_line and all(
                 not text.strip() for _, text in line
             ):
                 line = [("class:cursor-empty", text) for _, text in line]
@@ -692,7 +683,7 @@ def run_tui(api: Any) -> int:
     """Run the read-only TUI against an already-authenticated API client."""
     state = TuiState(api=api, chats=list_chats(api))
     list_window = Window(
-        FormattedTextControl(cast(Any, state.list_fragments), focusable=True),
+        FormattedTextControl(cast(Any, state.list_fragments), focusable=True, show_cursor=False),
         width=Dimension(weight=1),
         wrap_lines=False,
         style="class:list-panel",
@@ -747,6 +738,8 @@ def run_tui(api: Any) -> int:
         "sender": "underline",
         "date": "bold",
         "boundary": "#666666",
+        "anchor": "#666666",
+        "anchor-cursor": "reverse",
         "cursor-empty": "underline",
         "own": "#88ccff",
         "other": "#eeeeee",
