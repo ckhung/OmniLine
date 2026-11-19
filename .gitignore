@@ -50,3 +50,7 @@ chat.json
 friends.json
 *.csv
 site/
+
+# ckhung's and Hermes agent's workspace
+AGENTS.md
+worksp/
