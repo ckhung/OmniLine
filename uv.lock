@@ -1343,13 +1343,30 @@ wheels = [
 
 [[package]]
 name = "okline"
-version = "2.9.2"
+version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography", version = "47.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version <= '3.9'" },
+    { name = "cryptography", version = "50.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version > '3.9'" },
+    { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/7e/7c01627a49912febd83a46dbd5f1b2f48cb65b028a16eda974230d72cc1f/okline-2.7.0.tar.gz", hash = "sha256:72e421d727e105d637b7e3e0559abdb0deea5b1c88718ceb9476ca956ab8fc0e", size = 2352918, upload-time = "2026-06-23T13:08:44.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/37/ed/6317fd9e5370ff5a5a8903292f04a8047d9dc2502ae97a324fa4016d68ac/okline-2.7.0-py3-none-any.whl", hash = "sha256:431ba062a418f8f92c529556f7eb5022e9ca261a0e503fbba2336345f8bd1c88", size = 2316701, upload-time = "2026-06-23T13:08:42.715Z" },
+]
+
+[[package]]
+name = "omniline"
+version = "0.1"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography", version = "47.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version <= '3.9'" },
     { name = "cryptography", version = "50.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version > '3.9'" },
+    { name = "okline" },
     { name = "prompt-toolkit", version = "3.0.52", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "prompt-toolkit", version = "3.0.53", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "qrcode" },
     { name = "requests", version = "2.32.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "requests", version = "2.34.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "wcwidth" },
@@ -1371,9 +1388,6 @@ dev = [
     { name = "types-requests", version = "2.32.4.20260107", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "types-requests", version = "2.33.0.20260906", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
 ]
-qr = [
-    { name = "qrcode" },
-]
 test = [
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -1384,18 +1398,19 @@ requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.0" },
     { name = "cryptography", specifier = ">=41.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8" },
+    { name = "okline", specifier = ">=2.7.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.5" },
     { name = "prompt-toolkit", specifier = ">=3.0.52" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
-    { name = "qrcode", marker = "extra == 'qr'", specifier = ">=7.0" },
+    { name = "qrcode", specifier = ">=7.0" },
     { name = "requests", specifier = ">=2.28" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "types-requests", marker = "extra == 'dev'" },
     { name = "wcwidth", specifier = ">=0.9.4" },
 ]
-provides-extras = ["qr", "test", "dev"]
+provides-extras = ["test", "dev"]
 
 [[package]]
 name = "packaging"

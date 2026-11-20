@@ -3,13 +3,13 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "okline"
-version = "2.9.2"
-description = "Unofficial LINE Messenger SDK for Python — QR login, send/receive, E2EE Letter Sealing, personal-account automation, CLI and bot framework."
+name = "omniline"
+version = "0.1"
+description = "User-friendly CLI and terminal UI for LINE Messenger, powered by OkLine."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
-authors = [{ name = "OkLine contributors" }]
+authors = [{ name = "Greg Chao-Kuei Hung" }]
 keywords = [
     "line", "line-messenger", "line-api", "line-bot", "line-messenger-api",
     "line-chrome", "line-chrome-extension-api", "line-client", "line-sdk",
@@ -21,11 +21,11 @@ keywords = [
     "chrome-extension", "thrift", "x-hmac", "okline",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
-    "Natural Language :: Thai",
+    "Natural Language :: Chinese (Traditional)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -40,12 +40,13 @@ classifiers = [
 dependencies = [
     "requests>=2.28",
     "cryptography>=41.0",
+    "qrcode>=7.0",
     "prompt-toolkit>=3.0.52",
     "wcwidth>=0.9.4",
+    "okline>=2.7.0",
 ]
 
 [project.optional-dependencies]
-qr = ["qrcode>=7.0"]
 test = ["pytest>=7.0"]
 dev = [
     "pytest>=7.0",
@@ -58,21 +59,17 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/NiceDayZc/OkLine"
-Documentation = "https://github.com/NiceDayZc/OkLine/tree/main/docs"
-Repository = "https://github.com/NiceDayZc/OkLine"
-Issues = "https://github.com/NiceDayZc/OkLine/issues"
-Changelog = "https://github.com/NiceDayZc/OkLine/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/ckhung/OmniLine"
+Documentation = "https://github.com/ckhung/OmniLine/tree/main/docs"
+Repository = "https://github.com/ckhung/OmniLine"
+Issues = "https://github.com/ckhung/OmniLine/issues"
+Changelog = "https://github.com/ckhung/OmniLine/blob/main/CHANGELOG.md"
 
 [project.scripts]
-okline = "okline.__main__:main"
 omniline = "omniline.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["okline*", "omniline*"]
-
-[tool.setuptools.package-data]
-okline = ["py.typed", "ltsm/ltsm.wasm", "ltsm/ltsmSandbox.js", "ltsm/ltsm_bridge.js"]
+include = ["omniline*"]
 
 # ---------------------------------------------------------------------------
 # Tooling
@@ -80,7 +77,7 @@ okline = ["py.typed", "ltsm/ltsm.wasm", "ltsm/ltsmSandbox.js", "ltsm/ltsm_bridge
 [tool.ruff]
 line-length = 95
 target-version = "py39"
-extend-exclude = ["okline/ltsm"]
+
 
 [tool.ruff.lint]
 # pyflakes(F), pycodestyle(E/W), isort(I), pyupgrade(UP), bugbear(B),
@@ -103,21 +100,19 @@ ignore = [
 "examples/*" = ["E402", "T201"]
 "live_test.py" = ["E402", "T201"]
 # the CLI is an argparse/dispatch builder where compact one-liners are intentional:
-"okline/__main__.py" = ["E402", "E702"]
-"okline/transport.py" = ["E402"]                 # imports after module-level setup
+
 
 [tool.ruff.lint.isort]
 known-first-party = ["okline", "omniline"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["okline", "omniline"]
+files = ["omniline"]
 ignore_missing_imports = true        # requests/cryptography/qrcode stubs optional
 warn_unused_ignores = true
 warn_redundant_casts = true
 no_implicit_optional = true
 check_untyped_defs = true
-exclude = ["okline/ltsm"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

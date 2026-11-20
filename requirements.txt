@@ -1,2 +1,6 @@
 requests>=2.28
 cryptography>=41.0
+qrcode>=7.0
+prompt-toolkit>=3.0.52
+wcwidth>=0.9.4
+okline>=2.7.0
