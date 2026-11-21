@@ -51,6 +51,8 @@ Important settings are in `~/.omniline/config.toml`: the token-file path, shared
 pinned chats, history limit, TUI theme, and conservative sending options. Dark
 and light themes are stored under `~/.omniline/themes/`.
 
+![tui screenshot](docs/assets/tui.png)
+
 ## License
 
 [MIT](LICENSE)
