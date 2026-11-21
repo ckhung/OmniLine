@@ -1,0 +1,37 @@
+# OmniLine configuration template.
+# Search order:
+#   1. --config PATH
+#   2. ~/.omniline/config.toml
+#   3. this distribution directory
+#
+# Paths may be absolute or relative to the config file's directory.  Keep
+# tokens.json outside version control; it contains credentials and E2EE keys.
+
+[paths]
+tokens_file = "tokens.json"
+
+[shared]
+# Store stable LINE chat MIDs, not display names: names can change and are not
+# necessarily unique.  TUI pin/unpin should update this list atomically, and
+# the web frontend should read the same list.
+pinned_chats = []
+
+# Useful shared display default; LINE timestamps are epoch milliseconds.
+timezone = "Asia/Taipei"
+history_limit = 50
+
+[cli]
+# Current CLI default: sort list output by display name.
+sort = "name"
+
+[tui]
+# Paths are relative to this config file.
+theme_file = "themes/dark.toml"
+# Ask for confirmation before sending.
+send_confirmation = true
+# Restrict R to a message/reply line or the final new-message line.
+send_only_on_fixed_lines = true
+
+[web]
+# Reserved for the web frontend; use the same theme initially.
+theme_file = "themes/dark.toml"

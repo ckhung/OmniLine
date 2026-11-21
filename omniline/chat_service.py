@@ -20,7 +20,8 @@ def message_boxes_by_id(api: Any, ids: list[str]) -> dict[str, dict[str, Any]]:
             with_unread_count=True,
             last_messages_count=1,
         )
-        assert isinstance(result, dict)
+        if not isinstance(result, dict):
+            raise RuntimeError("LINE returned invalid message-box data")
         batch = result.get("messageBoxesByIds", result.get("messageBoxes", {})) or {}
         if isinstance(batch, dict):
             boxes.update({str(mid): box for mid, box in batch.items() if isinstance(box, dict)})
@@ -39,9 +40,11 @@ def list_chats(api: Any) -> list[uflChat]:
     """Return all contacts and groups as one polymorphic list."""
     contact_ids = api.get_all_contact_ids() or []
     contacts_result = api.get_contacts(contact_ids) if contact_ids else {"contacts": {}}
-    assert isinstance(contacts_result, dict)
+    if not isinstance(contacts_result, dict):
+        raise RuntimeError("LINE returned invalid contact data")
     contact_data = contacts_result.get("contacts", {})
-    assert isinstance(contact_data, dict)
+    if not isinstance(contact_data, dict):
+        raise RuntimeError("LINE returned invalid contact data")
     contact_ids = list(contact_data)
 
     all_chats = api.get_all_chat_mids() or {}
@@ -52,17 +55,21 @@ def list_chats(api: Any) -> list[uflChat]:
         )
     )
     group_result = api.get_chats(group_ids) if group_ids else {"chats": []}
-    assert isinstance(group_result, dict)
+    if not isinstance(group_result, dict):
+        raise RuntimeError("LINE returned invalid group data")
     group_data = group_result.get("chats", [])
-    assert isinstance(group_data, list)
+    if not isinstance(group_data, list):
+        raise RuntimeError("LINE returned invalid group data")
 
     boxes = message_boxes_by_id(api, contact_ids + group_ids)
     chats: list[uflChat] = []
     for mid, data in contact_data.items():
-        assert isinstance(data, dict)
+        if not isinstance(data, dict):
+            raise RuntimeError("LINE returned invalid contact data")
         chats.append(uflContact.from_okline(Contact.from_dict(data), boxes.get(mid, {})))
     for data in group_data:
-        assert isinstance(data, dict)
+        if not isinstance(data, dict):
+            raise RuntimeError("LINE returned invalid group data")
         group = Group.from_dict(data)
         chats.append(uflGroup.from_okline(group, boxes.get(group.chat_mid, {})))
     return chats
@@ -78,12 +85,15 @@ def resolve_contact_names(api: Any, mids: list[str]) -> dict[str, str]:
     if not mids:
         return {}
     result = api.get_contacts(mids)
-    assert isinstance(result, dict)
+    if not isinstance(result, dict):
+        raise RuntimeError("LINE returned invalid contact data")
     contacts = result.get("contacts", {})
-    assert isinstance(contacts, dict)
+    if not isinstance(contacts, dict):
+        raise RuntimeError("LINE returned invalid contact data")
     names: dict[str, str] = {}
     for mid, data in contacts.items():
-        assert isinstance(data, dict)
+        if not isinstance(data, dict):
+            raise RuntimeError("LINE returned invalid contact data")
         name = Contact.from_dict(data).name
         if name:
             names[str(mid)] = name
@@ -113,15 +123,21 @@ def recent_messages(api: Any, chat: uflChat, count: int) -> list[uflMessage]:
     """Fetch one recent page and decrypt sealed messages when possible."""
     raw_messages = api.get_recent_messages(chat.id, count=count) or []
     messages: list[uflMessage] = []
+    self_mid = getattr(getattr(api, "tokens", None), "mid", None)
     for raw in raw_messages:
-        assert isinstance(raw, dict)
+        if not isinstance(raw, dict):
+            raise RuntimeError("LINE returned invalid message data")
         decoded = raw
         if raw.get("chunks"):
             try:
                 decoded = api.decrypt_message(raw)
             except Exception:
                 decoded = dict(raw)
-                decoded["text"] = "[encrypted]"
+                decoded["text"] = (
+                    "[encrypted outgoing message; plaintext unavailable]"
+                    if self_mid and raw.get("from") == self_mid
+                    else "[encrypted]"
+                )
         message = uflMessage.from_okline(decoded)
         if decoded is not raw and decoded.get("text") != "[encrypted]":
             message.raw.pop("chunks", None)

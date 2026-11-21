@@ -1,0 +1,25 @@
+# OmniLine configuration template.
+# Search order:
+#   1. --config PATH
+#   2. ~/.omniline/config.toml
+#   3. this distribution directory
+
+[paths]
+tokens_file = "tokens.json"
+
+[shared]
+pinned_chats = []
+timezone = "Asia/Taipei"
+history_limit = 50
+
+[cli]
+sort = "name"
+history_limit = 50
+
+[tui]
+theme_file = "themes/dark.toml"
+send_confirmation = true
+send_only_on_fixed_lines = true
+
+[web]
+theme_file = "themes/dark.toml"

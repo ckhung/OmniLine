@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
+from types import SimpleNamespace
 from typing import Any
 
 from okline.entities import Contact
@@ -13,8 +15,9 @@ from omniline.chat_service import (
     recent_messages,
     resolve_contact_names,
 )
-from omniline.tui import TuiState
-from omniline.ufl import repeat_pattern, uflContact, uflGroup
+from omniline.cli import write_history
+from omniline.tui import TuiState, _first_url, _wrap_display_cells
+from omniline.ufl import repeat_pattern, uflContact, uflGroup, uflMessage
 
 CONTACT_MID = "u" + "1" * 32
 GROUP_MID = "c" + "2" * 32
@@ -28,6 +31,7 @@ class FakeApi:
         self.decrypt_calls: list[str] = []
         self.checked_calls: list[tuple[str, str]] = []
         self.messages: list[dict] = []
+        self.tokens = SimpleNamespace(mid=None)
 
     def get_all_contact_ids(self) -> list[str]:
         return [CONTACT_MID]
@@ -136,6 +140,18 @@ def test_recent_messages_marks_failed_decryption_without_fabricating_text():
     assert "chunks" in messages[0].raw
 
 
+def test_recent_messages_identifies_unrecoverable_outgoing_ciphertext():
+    api = FakeApi()
+    api.tokens = SimpleNamespace(mid=CONTACT_MID)
+    api.messages = [
+        {"id": "failed", "from": CONTACT_MID, "chunks": ["ciphertext"], "contentType": 0}
+    ]
+
+    message = recent_messages(api, uflContact("u3", "Ruby"), 1)[0]
+
+    assert message.text == "[encrypted outgoing message; plaintext unavailable]"
+
+
 def test_marking_chat_read_uses_newest_message_id():
     api = FakeApi()
     chat = uflGroup(GROUP_MID, "Hiking", unread_count=2)
@@ -182,6 +198,15 @@ def test_message_json_is_serializable():
     assert json.loads(json.dumps(message.to_dict(), ensure_ascii=False))["text"] == "hello"
 
 
+def test_cli_history_does_not_emit_raw_backend_payloads():
+    message = uflMessage(id="m1", text="hello", raw={"chunks": ["ciphertext"]})
+    output = StringIO()
+
+    write_history([message], output)
+
+    assert "chunks" not in output.getvalue()
+
+
 def test_empty_chat_list_ignores_content_and_profile_activation():
     state = TuiState(api=FakeApi(), chats=[])
 
@@ -195,6 +220,18 @@ def test_empty_chat_list_ignores_content_and_profile_activation():
 def test_repeat_pattern_fills_requested_display_width():
     assert repeat_pattern("* ", 7) == "* * * *"
     assert repeat_pattern("ab", 5) == "ababa"
+
+
+def test_own_message_wrapping_uses_terminal_display_cells():
+    assert _wrap_display_cells("abcdef", 4) == ["abcd", "ef"]
+    assert _wrap_display_cells("你好世界", 6) == ["你好世", "界"]
+
+
+def test_first_url_uses_the_first_url_and_removes_sentence_punctuation():
+    assert _first_url("See https://example.com/a, then https://ignored.example") == (
+        "https://example.com/a"
+    )
+    assert _first_url("no URL here") is None
 
 
 def test_filtered_list_can_be_restored_and_counts_refreshed():

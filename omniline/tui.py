@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
-from prompt_toolkit.application import Application, get_app
+from prompt_toolkit.application import Application, get_app, run_in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings
@@ -16,6 +19,7 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.screen import Point
 from prompt_toolkit.styles import Style
+from prompt_toolkit.utils import get_cwidth
 
 from .chat_service import (
     list_chats,
@@ -24,6 +28,7 @@ from .chat_service import (
     refresh_unread_counts,
     resolve_contact_names,
 )
+from .config import AppConfig, load_config
 from .ufl import (
     TAIPEI,
     fit_display_name,
@@ -35,6 +40,34 @@ from .ufl import (
     uflMessage,
 )
 
+URL_PATTERN = re.compile(r"https?://[^\s<>()]+")
+
+
+def _first_url(text: str) -> str | None:
+    """Return the first URL in a rendered content line."""
+    match = URL_PATTERN.search(text)
+    return match.group(0).rstrip(".,;:!?]}") if match else None
+
+
+def _open_url(browser: str, url: str) -> None:
+    subprocess.run([browser, url], check=False)
+
+
+def _wrap_display_cells(text: str, width: int) -> list[str]:
+    """Wrap text without splitting a terminal display cell."""
+    if width < 1:
+        raise ValueError("display width must be positive")
+    lines: list[str] = []
+    for part in text.splitlines() or [""]:
+        current = ""
+        for char in part:
+            if current and get_cwidth(current + char) > width:
+                lines.append(current)
+                current = ""
+            current += char
+        lines.append(current)
+    return lines
+
 
 @dataclass
 class TuiState:
@@ -42,6 +75,7 @@ class TuiState:
 
     api: Any
     chats: list[uflChat]
+    config: AppConfig = field(default_factory=load_config)
     mode: str = "list"
     cursor: int = 0
     ordinary_offset: int = 0
@@ -63,6 +97,7 @@ class TuiState:
     search_direction: int = -1
     sender_names: dict[str, str] = field(default_factory=dict)
     app: Application | None = None
+    status_error: str | None = None
 
     @property
     def self_mid(self) -> str | None:
@@ -167,7 +202,8 @@ class TuiState:
             self.invalidate()
 
     def refresh_counts(self) -> None:
-        assert self.mode == "list"
+        if self.mode != "list":
+            return
         refresh_unread_counts(self.api, self.chats)
         self.ensure_cursor()
         self.invalidate()
@@ -181,10 +217,16 @@ class TuiState:
         self.invalidate()
 
     def toggle_pin(self) -> None:
-        assert self.mode == "profile"
+        if self.mode != "profile":
+            return
         chat = self.current_chat
-        assert chat is not None
+        if chat is None:
+            return
         old_id = chat.id
+        pinned = [row.id for row in self.chats if row.pinned and row.id != old_id]
+        if not chat.pinned:
+            pinned.append(old_id)
+        self.config.save_pinned_chats(pinned)
         chat.pinned = not chat.pinned
         rows = self.pinned + self.ordinary
         self.cursor = next(index for index, row in enumerate(rows) if row.id == old_id)
@@ -197,7 +239,7 @@ class TuiState:
             return
         unread_count = chat.unread_count or 0
         self.selected_chat = chat
-        self.messages = list(reversed(recent_messages(self.api, chat, 50)))
+        self.messages = list(reversed(recent_messages(self.api, chat, self.config.history_limit)))
         sender_mids = {
             message.from_mid
             for message in self.messages
@@ -216,12 +258,18 @@ class TuiState:
 
     def compose_message(self) -> None:
         """Open the in-application compose dialog at the content cursor."""
-        assert self.mode == "content"
+        if self.mode != "content":
+            return
         chat = self.selected_chat
-        assert chat is not None
+        if chat is None:
+            return
         reply_id = self.reply_targets.get(self.content_cursor_line)
         is_new_message = self.content_cursor_line == len(self.content_lines) - 1
-        if not reply_id and not is_new_message:
+        if (
+            not reply_id
+            and not is_new_message
+            and self.config.tui_send_only_on_fixed_lines
+        ):
             return
         self.compose_mode = "reply" if reply_id else "new"
         self.compose_confirm = False
@@ -233,13 +281,18 @@ class TuiState:
         if not self.compose_buffer.text.strip():
             self.cancel_compose()
             return
-        self.compose_confirm = True
-        self.invalidate()
+        if self.config.tui_send_confirmation:
+            self.compose_confirm = True
+            self.invalidate()
+        else:
+            self.confirm_compose()
 
     def confirm_compose(self) -> None:
-        assert self.compose_mode in {"new", "reply"}
+        if self.compose_mode not in {"new", "reply"}:
+            return
         chat = self.selected_chat
-        assert chat is not None
+        if chat is None:
+            return
         reply_id = self.reply_targets.get(self.content_cursor_line)
         text = self.compose_buffer.text
         if reply_id:
@@ -274,7 +327,10 @@ class TuiState:
         self.invalidate()
 
     def find_content_matches(self) -> None:
-        assert self.content_query
+        if not self.content_query:
+            self.content_matches = []
+            self.content_cursor = None
+            return
         self.content_matches = []
         for line_index, line in enumerate(self.content_lines):
             text = "".join(part for _, part in line)
@@ -306,7 +362,8 @@ class TuiState:
         self.reveal_content_cursor(step)
 
     def reveal_content_cursor(self, direction: int) -> None:
-        assert self.content_cursor is not None
+        if self.content_cursor is None:
+            return
         self.content_cursor_line = self.content_matches[self.content_cursor][0]
         self.reveal_line_cursor(direction)
 
@@ -335,6 +392,12 @@ class TuiState:
             return None
         y = self.content_cursor_line - self.content_offset
         return Point(x=0, y=y) if 0 <= y < self.content_height() else None
+
+    def current_content_url(self) -> str | None:
+        if self.mode != "content" or not self.content_lines:
+            return None
+        line = self.content_lines[self.content_cursor_line]
+        return _first_url("".join(text for _, text in line))
 
     def make_message_lines(
         self, chat: uflChat, messages: list[uflMessage], unread_count: int = 0
@@ -375,11 +438,19 @@ class TuiState:
                 self.reply_targets[len(lines)] = message.id
                 lines.append([("", timestamp), ("class:sender", sender)])
             text = message.text or f"[{message.availability}]"
-            for part in text.splitlines() or [""]:
-                wrapped = textwrap.wrap(part, width=text_width) or [""]
+            if own:
+                wrapped = _wrap_display_cells(text, text_width)
+                box_width = max(1, max(get_cwidth(line) for line in wrapped))
                 for line in wrapped:
-                    padded = (" " * 4 + line) if own else (line.ljust(text_width) + " " * 4)
-                    lines.append([("class:own" if own else "class:other", padded)])
+                    box = line + " " * (box_width - get_cwidth(line))
+                    lines.append(
+                        [("", " " * (width - box_width)), ("class:own-box", box)]
+                    )
+            else:
+                for part in text.splitlines() or [""]:
+                    wrapped = textwrap.wrap(part, width=text_width) or [""]
+                    for line in wrapped:
+                        lines.append([("class:other", line.ljust(text_width) + " " * 4)])
         lines.append([("class:anchor", repeat_pattern("* ", width))])
         return lines
 
@@ -417,9 +488,11 @@ class TuiState:
 
     def profile_fragments(self) -> list[tuple[str, str]]:
         chat = self.selected_chat or self.current_chat
-        assert chat is not None
+        if chat is None:
+            return [("class:dim", "No chat selected.\n")]
         raw = getattr(chat, "raw", {})
-        assert isinstance(raw, dict)
+        if not isinstance(raw, dict):
+            raw = {}
         lines = [
             ("class:title", chat.name or chat.id),
             ("", f"kind: {chat.kind}\n"),
@@ -494,8 +567,10 @@ class TuiState:
         if self.mode == "list":
             return "/ search   Enter/l: messages   p: profile   q: quit"
         if self.mode == "profile":
-            return "h/Left/Esc: back"
-        return "/ search   n: next, p: previous   R: send/reply   h/Left/Esc: chats   q: quit"
+            return "P: pin/unpin   h/Left/Esc: back"
+        if self.status_error:
+            return self.status_error
+        return "/ search   Enter: open URL   n: next, p: previous   R: send/reply   h/Left/Esc: chats   q: quit"
 
 
 def _key_bindings(
@@ -577,7 +652,7 @@ def _key_bindings(
         event.app.layout.focus(search_window)
 
     @keys.add("enter")
-    def _enter(event: Any) -> None:
+    async def _enter(event: Any) -> None:
         if state.compose_mode:
             if state.compose_confirm:
                 state.confirm_compose()
@@ -589,6 +664,17 @@ def _key_bindings(
         elif state.mode == "list" and state.current_chat is not None:
             state.enter_content()
             focus_content(event)
+        elif state.mode == "content":
+            url = state.current_content_url()
+            if url:
+                browser = shutil.which("w3m") or shutil.which("lynx")
+                if browser is None:
+                    state.status_error = "URL browser unavailable: install w3m or lynx"
+                    state.invalidate()
+                    return
+                state.status_error = None
+                await run_in_terminal(lambda: _open_url(browser, url))
+                event.app.invalidate()
 
     @keys.add("escape")
     def _escape(event: Any) -> None:
@@ -629,6 +715,21 @@ def _key_bindings(
     def _previous_match(event: Any) -> None:
         if state.content_query:
             state.previous_content_match()
+            state.invalidate()
+
+    @keys.add(
+        "P",
+        filter=Condition(
+            lambda: state.search_mode is None
+            and state.compose_mode is None
+            and state.mode == "profile"
+        ),
+    )
+    def _toggle_pin(event: Any) -> None:
+        try:
+            state.toggle_pin()
+        except (OSError, RuntimeError, ValueError) as exc:
+            state.status_error = f"Cannot save pin: {exc}"
             state.invalidate()
 
     @keys.add("R", filter=list_active)
@@ -679,9 +780,13 @@ def _key_bindings(
     return keys
 
 
-def run_tui(api: Any) -> int:
+def run_tui(api: Any, config: AppConfig | None = None) -> int:
     """Run the read-only TUI against an already-authenticated API client."""
-    state = TuiState(api=api, chats=list_chats(api))
+    config = config or load_config()
+    chats = list_chats(api)
+    for chat in chats:
+        chat.pinned = chat.id in config.pinned_chats
+    state = TuiState(api=api, chats=chats, config=config)
     list_window = Window(
         FormattedTextControl(cast(Any, state.list_fragments), focusable=True, show_cursor=False),
         width=Dimension(weight=1),
@@ -726,30 +831,7 @@ def run_tui(api: Any) -> int:
         ConditionalContainer(compose_window, Condition(lambda: state.compose_mode is not None)),
         status_window,
     ])
-    style = Style.from_dict({
-        "list-panel": "bg:#202020",
-        "content-panel": "bg:#101010",
-        "divider": "#666666",
-        "selected": "reverse",
-        "favorite": "bold",
-        "underline": "underline",
-        "favorite-underline": "bold underline",
-        "title": "bold underline",
-        "sender": "underline",
-        "date": "bold",
-        "boundary": "#666666",
-        "anchor": "#666666",
-        "anchor-cursor": "reverse",
-        "cursor-empty": "underline",
-        "own": "#88ccff",
-        "other": "#eeeeee",
-        "match": "reverse #ffff00",
-        "other-match": "bold",
-        "status": "reverse",
-        "search": "#ffffff bg:#303030",
-        "compose": "#ffffff bg:#303030",
-        "dim": "#888888",
-    })
+    style = Style.from_dict(config.tui_theme)
     application: Application[None] = Application(
         layout=Layout(body, focused_element=list_window),
         key_bindings=_key_bindings(

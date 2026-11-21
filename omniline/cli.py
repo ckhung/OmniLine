@@ -40,12 +40,15 @@ def write_matching_chats(chats: list[uflChat], stream: Any = sys.stdout) -> None
 
 def write_history(messages: list[Any], stream: Any = sys.stdout) -> None:
     for message in messages:
-        json.dump(message.to_dict(), stream, ensure_ascii=False)
+        output = message.to_dict()
+        output.pop("raw", None)
+        json.dump(output, stream, ensure_ascii=False)
         stream.write("\n")
 
 
 def run_list(api: Any, args: Namespace, stream: Any = sys.stdout) -> int:
-    assert not ((args.json or args.full) and args.csv), "--json/--full and --csv conflict"
+    if (args.json or args.full) and args.csv:
+        raise ValueError("choose either --json/--full or --csv")
     chats = sort_chats(list_chats(api))
     if args.sort == "name":
         chats = sorted(chats, key=lambda chat: (chat.name.casefold(), chat.id))
@@ -57,7 +60,8 @@ def run_list(api: Any, args: Namespace, stream: Any = sys.stdout) -> int:
 
 
 def run_history(api: Any, args: Namespace, stream: Any = sys.stdout, error: Any = sys.stderr) -> int:
-    assert args.n >= 1, "-n must be positive"
+    if args.n < 1:
+        raise ValueError("-n must be positive")
     matches = find_chats(list_chats(api), args.needle)
     if not matches:
         print(f'no chat matches "{args.needle}"', file=error)

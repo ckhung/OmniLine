@@ -25,8 +25,10 @@ def _cell_width(text: str) -> int:
 
 def repeat_pattern(pattern: str, width: int) -> str:
     """Repeat a configured text pattern until it fills ``width`` cells."""
-    assert pattern
-    assert width >= 0
+    if not pattern:
+        raise ValueError("display pattern cannot be empty")
+    if width < 0:
+        raise ValueError("display width cannot be negative")
     result = ""
     while _cell_width(result + pattern) <= width:
         result += pattern

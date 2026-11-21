@@ -44,6 +44,7 @@ dependencies = [
     "prompt-toolkit>=3.0.52",
     "wcwidth>=0.9.4",
     "okline>=2.7.0",
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -70,6 +71,9 @@ omniline = "omniline.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["omniline*"]
+
+[tool.setuptools.package-data]
+omniline = ["config.toml", "themes/*.toml"]
 
 # ---------------------------------------------------------------------------
 # Tooling

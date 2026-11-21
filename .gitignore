@@ -38,6 +38,9 @@ tokens.json
 *.tokens.json
 okline_session.*
 *.har
+*.sqlite3
+*.db
+.omniline/
 line_login_qr.png
 .env
 
