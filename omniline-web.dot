@@ -1,0 +1,73 @@
+
+// One Flask WSGI application is the security boundary for every deployment.
+// Apache may terminate TLS and proxy, but must not be a second authentication
+// implementation.  In particular, do not trust REMOTE_USER or an auth header
+// supplied by the client; the Flask layer checks the session itself.
+//
+// The user name is intentionally absent.  The login form contains only a
+// password.  The password verifier reads one Argon2id (or an equally strong
+// memory-hard) password hash from ~/.omniline/password.hash.  It never stores
+// or logs the clear-text password.  The file should be owned by the account
+// running the app and have mode 0600.
+//
+// A successful check creates a signed, HttpOnly, Secure (when HTTPS is used),
+// SameSite=Lax session cookie.  The signing key is a separate random secret
+// in ~/.omniline/session.secret; the password hash is not suitable for this.
+// All state-changing POSTs also require CSRF protection.  Failed logins get a
+// generic response and should be rate-limited at the deployment boundary.
+//
+// Route processing:
+//   request -> WSGI app -> session/auth check -> route -> ufl/core -> OkLine
+//   -> escaped HTML response (or redirect to /login)
+//
+// The browser's three possible paths converge at the same Flask app and hence
+// at the same authentication code.  The development server is for local
+// development only; Gunicorn is the normal application server; Apache2 is an
+// optional public-facing TLS/reverse-proxy layer in front of Gunicorn.
+digraph FlaskArchitecture {
+    rankdir=TB;
+    compound=true;
+    node [shape=box, style="rounded"];
+    edge [fontname="DejaVu Sans"];
+
+    Browser [label="Browser / Client"];
+
+    subgraph cluster_entrypoints {
+        label="HTTP entry paths";
+        color="#888888";
+        Apache [label="Apache2\nTLS + reverse proxy"];
+        Dev [label="Flask development server\n127.0.0.1:1730\n(local only)"];
+        Gunicorn [label="Gunicorn WSGI server\n127.0.0.1:8001"];
+    }
+
+    subgraph cluster_application {
+        label="One shared Flask WSGI application";
+        color="#4C78A8";
+        WSGI [label="WSGI boundary\ncreate_app()"];
+        Auth [label="Flask auth gate\npassword-only login\nsession + CSRF"];
+        Hash [label="~/.omniline/password.hash\n0600; Argon2id hash"];
+        Secret [label="~/.omniline/session.secret\n0600; random signing key"];
+        Routes [label="Authenticated routes\nGET history / contacts\nPOST state changes"];
+        Core [label="ufl / shared service core\nno Flask or HTTP dependencies"];
+        OkLine [label="OkLine / LINE backend\ncredentials remain server-side"];
+        Response [label="Jinja-escaped HTML\n+ safe generic errors"];
+    }
+
+    Browser -> Apache [label="HTTPS (deployment)"];
+    Browser -> Dev [label="HTTP (development)"];
+    Browser -> Gunicorn [label="HTTP (local direct)"];
+    Apache -> Gunicorn [label="private proxy\nHTTP or Unix socket"];
+
+    Dev -> WSGI [label="imports app factory"];
+    Gunicorn -> WSGI [label="loads WSGI callable"];
+    WSGI -> Auth [label="every request"];
+    Auth -> Hash [label="verify submitted password"];
+    Auth -> Secret [label="sign / verify session"];
+    Auth -> Routes [label="authenticated"];
+    Auth -> Browser [label="302 /login\nor generic 401"];
+    Routes -> Core [label="normalized operation"];
+    Core -> OkLine [label="API call"];
+    Core -> Response [label="normalized data"];
+    Response -> Browser [label="HTTP response"];
+}
+

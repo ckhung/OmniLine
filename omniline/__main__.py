@@ -14,6 +14,7 @@ from okline._util import reconfigure_stdout_utf8
 from .cli import run_history, run_list
 from .config import AppConfig, init_user_directory, load_config
 from .tui import run_tui
+from .web import run_web
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -22,6 +23,10 @@ def _build_parser() -> argparse.ArgumentParser:
     frontends = parser.add_subparsers(dest="frontend", required=True)
     init = frontends.add_parser("init", help="initialize ~/.omniline")
     init.add_argument("--force", action="store_true", help="overwrite existing files")
+    web = frontends.add_parser("web", help="authenticated web frontend")
+    web.add_argument("--host", default="127.0.0.1", help="development-server bind address")
+    web.add_argument("--port", type=int, default=1730, help="development-server port")
+    web.add_argument("--init-auth", action="store_true", help="initialize web password files")
     tui = frontends.add_parser("tui", help="read-only terminal UI")
     tui.add_argument("--tokens-file", default=None, help="session JSON file")
     tui.add_argument("--theme-file", default=None, help="temporary TUI theme TOML file")
@@ -62,6 +67,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
         for path in skipped:
             print(f"kept existing {path}")
         return 0
+    if args.frontend == "web":
+        try:
+            return run_web(args.host, args.port, init_auth=args.init_auth)
+        except (OSError, RuntimeError, ValueError) as exc:
+            print(f"omniline: cannot run web frontend: {exc}", file=sys.stderr)
+            return 2
     try:
         config = load_config(args.config, args.theme_file if args.frontend == "tui" else None)
     except (OSError, RuntimeError, ValueError) as exc:

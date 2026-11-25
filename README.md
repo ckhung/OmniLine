@@ -53,6 +53,112 @@ and light themes are stored under `~/.omniline/themes/`.
 
 ![tui screenshot](docs/assets/tui.png)
 
+## Using the Web Interface
+
+The first web version displays `omniline web` after login. Messaging routes
+will be added later. Flask, Gunicorn, and the required Apache proxy modules
+are already declared or installed as follows:
+
+- Python dependencies: `flask` and `gunicorn` (installed by `uv sync` or
+  `pip install omniline`)
+- Debian package: `apache2` (only needed for the Apache deployment)
+- Apache modules: `proxy`, `proxy_http`, and `headers`
+
+### Initialize web authentication
+
+Create the password verifier and Flask session-signing secret interactively:
+
+```
+omniline web --init-auth
+```
+
+This creates:
+
+```
+~/.omniline/password.hash
+~/.omniline/session.secret
+```
+
+The password is never stored in clear text. Both files are created with
+restrictive permissions and must remain private. Authentication is enabled by
+default and is not disabled by the HTTP/HTTPS configuration.
+
+### Local HTTP development server
+
+Run the Flask development server on loopback:
+
+```
+omniline web
+```
+
+Open `http://127.0.0.1:1730/`. This server is for development only. For plain
+HTTP development, do not set `OMNILINE_COOKIE_SECURE`.
+
+### Gunicorn
+
+Run Gunicorn on a loopback address:
+
+```
+uv run gunicorn \
+    --bind 127.0.0.1:8001 \
+    omniline.web:app
+```
+
+For an HTTPS deployment behind Apache, set the cookie transport flag:
+
+```
+OMNILINE_COOKIE_SECURE=1 \
+uv run gunicorn \
+    --bind 127.0.0.1:8001 \
+    omniline.web:app
+```
+
+`OMNILINE_COOKIE_SECURE` controls only the browser's `Secure` cookie
+attribute. It does not bypass password checking. Password checking always
+occurs; there is no authentication-bypass environment variable.
+
+### Apache2 path-specific reverse proxy
+
+If Apache already serves other pages, add the following inside the existing
+HTTPS `<VirtualHost>` block. It makes only `/omniline/` reach Gunicorn:
+
+```
+RedirectMatch 301 ^/omniline$ /omniline/
+
+ProxyPass        /omniline/ http://127.0.0.1:8001/
+ProxyPassReverse /omniline/ http://127.0.0.1:8001/
+
+<Location /omniline/>
+    RequestHeader set X-Forwarded-Prefix "/omniline"
+    Require all granted
+</Location>
+
+ProxyPassReverseCookiePath / /omniline/
+```
+
+Place these rules before a generic `ProxyPass / ...` rule, if one exists.
+`X-Forwarded-Prefix` allows Flask to generate redirects such as
+`/omniline/login` rather than `/login`. `ProxyPassReverseCookiePath` keeps the
+authentication cookie scoped to OmniLine.
+
+Enable the modules and validate the configuration:
+
+```
+sudo a2enmod proxy proxy_http headers
+sudo apache2ctl configtest
+sudo apache2ctl -k graceful
+```
+
+On systems without `systemctl`, use `apache2ctl -k start`, `-k graceful`, and
+`-k stop`. Start Gunicorn before testing the Apache proxy. The public URL is:
+
+```
+https://your-host/omniline/
+```
+
+Gunicorn should remain bound to `127.0.0.1`; Apache is the public TLS and
+reverse-proxy boundary.
+
 ## License
 
 [MIT](LICENSE)

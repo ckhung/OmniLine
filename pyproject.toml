@@ -45,6 +45,8 @@ dependencies = [
     "wcwidth>=0.9.4",
     "okline>=2.7.0",
     "tomli>=2.0; python_version < '3.11'",
+    "flask>=3.1",
+    "gunicorn>=23.0.0",
 ]
 
 [project.optional-dependencies]
