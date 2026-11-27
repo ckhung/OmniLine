@@ -27,6 +27,11 @@ def _build_parser() -> argparse.ArgumentParser:
     web.add_argument("--host", default="127.0.0.1", help="development-server bind address")
     web.add_argument("--port", type=int, default=1730, help="development-server port")
     web.add_argument("--init-auth", action="store_true", help="initialize web password files")
+    web.add_argument(
+        "--password-file",
+        default=None,
+        help="temporary password.hash file for this web process",
+    )
     tui = frontends.add_parser("tui", help="read-only terminal UI")
     tui.add_argument("--tokens-file", default=None, help="session JSON file")
     tui.add_argument("--theme-file", default=None, help="temporary TUI theme TOML file")
@@ -69,7 +74,12 @@ def _main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.frontend == "web":
         try:
-            return run_web(args.host, args.port, init_auth=args.init_auth)
+            return run_web(
+                args.host,
+                args.port,
+                init_auth=args.init_auth,
+                password_file=args.password_file,
+            )
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"omniline: cannot run web frontend: {exc}", file=sys.stderr)
             return 2

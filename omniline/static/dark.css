@@ -1,0 +1,17 @@
+/* Dark color theme for the web interface. */
+
+:root {
+  color-scheme: dark;
+  --color-background: #16181d;
+  --color-panel: #20242c;
+  --color-panel-alt: #292f3a;
+  --color-text: #e8edf2;
+  --color-muted: #9da8b5;
+  --color-accent: #73d0c2;
+  --color-border: #3b4553;
+  --color-unread: #ef8d75;
+  --color-message-own: #245c62;
+  --color-message-own-text: #e8edf2;
+  --color-interactive: #8a4b20;
+  --color-interactive-text: #fff3e0;
+}

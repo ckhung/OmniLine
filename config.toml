@@ -33,5 +33,10 @@ send_confirmation = true
 send_only_on_fixed_lines = true
 
 [web]
-# Reserved for the web frontend; use the same theme initially.
-theme_file = "themes/dark.toml"
+# Web presentation uses the CSS files in omniline/static/.
+# The theme_file setting above belongs to the TUI; TOML is not CSS.
+# Append JSON-lines login results to this file; relative to this config file.
+access_log = "~/.omniline/access.log"
+# Allow at most this many failed attempts during the rolling window.
+max_failed_attempts = 5
+failed_attempt_window_seconds = 300

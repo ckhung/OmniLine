@@ -1,0 +1,17 @@
+/* Light color theme for the web interface. */
+
+:root {
+  color-scheme: light;
+  --color-background: #f7f8fa;
+  --color-panel: #ffffff;
+  --color-panel-alt: #e9f0f2;
+  --color-text: #1e2930;
+  --color-muted: #65747d;
+  --color-accent: #168c83;
+  --color-border: #d6dfe3;
+  --color-unread: #c44835;
+  --color-message-own: #cce9e5;
+  --color-message-own-text: #1e2930;
+  --color-interactive: #ffe0b2;
+  --color-interactive-text: #5d2a00;
+}

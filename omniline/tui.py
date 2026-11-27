@@ -5,9 +5,11 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 import textwrap
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, cast
 
 from prompt_toolkit.application import Application, get_app, run_in_terminal
@@ -22,8 +24,10 @@ from prompt_toolkit.styles import Style
 from prompt_toolkit.utils import get_cwidth
 
 from .chat_service import (
+    download_media,
     list_chats,
     mark_chat_read,
+    media_reference,
     recent_messages,
     refresh_unread_counts,
     resolve_contact_names,
@@ -51,6 +55,15 @@ def _first_url(text: str) -> str | None:
 
 def _open_url(browser: str, url: str) -> None:
     subprocess.run([browser, url], check=False)
+
+
+def _open_media(viewer: str, data: bytes, name: str) -> None:
+    """Open downloaded media in an external viewer, then remove the temp file."""
+    suffix = Path(name).suffix or ".bin"
+    with tempfile.NamedTemporaryFile(prefix="omniline-", suffix=suffix) as stream:
+        stream.write(data)
+        stream.flush()
+        subprocess.run([viewer, stream.name], check=False)
 
 
 def _wrap_display_cells(text: str, width: int) -> list[str]:
@@ -94,6 +107,7 @@ class TuiState:
     content_cursor: int | None = None
     content_cursor_line: int = 0
     reply_targets: dict[int, str] = field(default_factory=dict)
+    media_targets: dict[int, uflMessage] = field(default_factory=dict)
     search_direction: int = -1
     sender_names: dict[str, str] = field(default_factory=dict)
     app: Application | None = None
@@ -399,6 +413,11 @@ class TuiState:
         line = self.content_lines[self.content_cursor_line]
         return _first_url("".join(text for _, text in line))
 
+    def current_content_media(self) -> uflMessage | None:
+        """Return media at the current history line, if any."""
+        message = self.media_targets.get(self.content_cursor_line)
+        return message if message and media_reference(message) else None
+
     def make_message_lines(
         self, chat: uflChat, messages: list[uflMessage], unread_count: int = 0
     ) -> list[list[tuple[str, str]]]:
@@ -407,6 +426,7 @@ class TuiState:
         names = self.name_by_mid
         lines: list[list[tuple[str, str]]] = []
         self.reply_targets = {}
+        self.media_targets = {}
         previous_date = None
         unread_boundary = len(messages) - max(0, unread_count)
         unread_boundary = min(max(0, unread_boundary), len(messages))
@@ -437,7 +457,14 @@ class TuiState:
                 )
                 self.reply_targets[len(lines)] = message.id
                 lines.append([("", timestamp), ("class:sender", sender)])
-            text = message.text or f"[{message.availability}]"
+            media = media_reference(message)
+            if media:
+                self.media_targets[len(lines)] = message
+            text = (
+                f"[{media['kind']}: {media['name']}]"
+                if media
+                else message.text or f"[{message.availability}]"
+            )
             if own:
                 wrapped = _wrap_display_cells(text, text_width)
                 box_width = max(1, max(get_cwidth(line) for line in wrapped))
@@ -665,8 +692,28 @@ def _key_bindings(
             state.enter_content()
             focus_content(event)
         elif state.mode == "content":
-            url = state.current_content_url()
-            if url:
+            media = state.current_content_media()
+            if media:
+                viewer = shutil.which("feh") or shutil.which("geeqie")
+                if viewer is None:
+                    state.status_error = "Image viewer unavailable: install feh or geeqie"
+                    state.invalidate()
+                    return
+                try:
+                    data, reference = download_media(state.api, media)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    state.status_error = f"Media unavailable: {exc}"
+                    state.invalidate()
+                    return
+                state.status_error = None
+                await run_in_terminal(
+                    lambda: _open_media(viewer, data, reference["name"])
+                )
+                event.app.invalidate()
+            else:
+                url = state.current_content_url()
+                if not url:
+                    return
                 browser = shutil.which("w3m") or shutil.which("lynx")
                 if browser is None:
                     state.status_error = "URL browser unavailable: install w3m or lynx"

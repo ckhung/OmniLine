@@ -55,6 +55,9 @@ class AppConfig:
     tui_send_only_on_fixed_lines: bool
     tui_theme: dict[str, str]
     web_theme: dict[str, str]
+    web_access_log: Path
+    web_max_failed_attempts: int
+    web_failed_attempt_window_seconds: int
 
     def save_pinned_chats(self, chats: list[str]) -> None:
         """Persist shared pins without rewriting unrelated user comments."""
@@ -170,6 +173,7 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
     tokens = Path(token_value).expanduser()
     if not tokens.is_absolute():
         tokens = base / tokens
+
     def theme_path(section: dict[str, Any]) -> Path | None:
         value = section.get("theme_file")
         if not value:
@@ -191,6 +195,22 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
     history_value = shared.get("history_limit", 50)
     if isinstance(history_value, bool) or not isinstance(history_value, int) or history_value < 1:
         raise ValueError("[shared].history_limit must be a positive integer")
+    access_log_value = web.get("access_log", "access.log")
+    if not isinstance(access_log_value, str):
+        raise ValueError("[web].access_log must be a string")
+    access_log = Path(access_log_value).expanduser()
+    if not access_log.is_absolute():
+        access_log = base / access_log
+    max_failed = web.get("max_failed_attempts", 5)
+    if isinstance(max_failed, bool) or not isinstance(max_failed, int) or max_failed < 1:
+        raise ValueError("[web].max_failed_attempts must be a positive integer")
+    failed_window = web.get("failed_attempt_window_seconds", 300)
+    if (
+        isinstance(failed_window, bool)
+        or not isinstance(failed_window, int)
+        or failed_window < 1
+    ):
+        raise ValueError("[web].failed_attempt_window_seconds must be a positive integer")
     return AppConfig(
         path=path,
         tokens_file=tokens,
@@ -202,4 +222,7 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
         tui_send_only_on_fixed_lines=_bool_setting(tui, "send_only_on_fixed_lines", True),
         tui_theme=_theme(tui_theme),
         web_theme=_theme(theme_path(web)),
+        web_access_log=access_log,
+        web_max_failed_attempts=max_failed,
+        web_failed_attempt_window_seconds=failed_window,
     )

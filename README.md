@@ -83,6 +83,22 @@ The password is never stored in clear text. Both files are created with
 restrictive permissions and must remain private. Authentication is enabled by
 default and is not disabled by the HTTP/HTTPS configuration.
 
+Login attempts are appended as JSON lines to `~/.omniline/access.log`; the
+password itself is never logged. The `[web]` section of `config.toml` controls
+the rolling failure limit:
+
+```
+[web]
+max_failed_attempts = 5
+failed_attempt_window_seconds = 300
+```
+
+After five failed attempts, further attempts are rejected until the rolling
+five-minute window expires. The current deployment assumes one Gunicorn
+worker, so the access log itself is the shared rate-limit state. If multiple
+workers are introduced later, replace this with a transactional shared store
+such as SQLite or Redis.
+
 ### Local HTTP development server
 
 Run the Flask development server on loopback:
@@ -93,6 +109,17 @@ omniline web
 
 Open `http://127.0.0.1:1730/`. This server is for development only. For plain
 HTTP development, do not set `OMNILINE_COOKIE_SECURE`.
+
+For a temporary password verifier, without replacing
+`~/.omniline/password.hash`, use:
+
+```
+omniline web --password-file /path/to/temporary-password.hash
+```
+
+The file must contain an OmniLine scrypt verifier and have restrictive file
+permissions. The session-signing secret is still read from
+`~/.omniline/session.secret`.
 
 ### Gunicorn
 

@@ -1,175 +1,162 @@
-"""Minimal authenticated Flask frontend for OmniLine."""
+"""Accessible, server-rendered Flask web frontend for OmniLine."""
 
 from __future__ import annotations
 
-import base64
-import getpass
-import hashlib
-import hmac
-import os
-import secrets
-import stat
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
-from flask import Flask, redirect, request, session, url_for
+from flask import Flask, Response, abort, render_template, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-AUTH_DIR_ENV = "OMNILINE_AUTH_DIR"
-PASSWORD_FILE = "password.hash"
-SESSION_SECRET_FILE = "session.secret"
-SALT_BYTES = 16
-KEY_BYTES = 32
-SCRYPT_N = 2**14
-SCRYPT_R = 8
-SCRYPT_P = 1
+from .chat_service import (
+    download_media,
+    list_chats,
+    media_reference,
+    message_display_text,
+    recent_messages,
+    resolve_contact_names,
+    sticker_reference,
+)
+from .config import load_config
+from .ufl import TAIPEI, sort_chats, uflChat
+from .web_auth import initialize_auth, install_auth
 
 
-def _auth_dir(path: str | Path | None = None) -> Path:
-    return Path(path or os.environ.get(AUTH_DIR_ENV, "~/.omniline")).expanduser()
-
-
-def _private_file(path: Path) -> bytes:
-    """Read a root-owned-by-this-user secret file with restrictive mode."""
-    info = path.stat()
-    if not stat.S_ISREG(info.st_mode):
-        raise RuntimeError(f"{path.name} is not a regular file")
-    if info.st_uid != os.getuid() or info.st_mode & 0o077:
-        raise RuntimeError(f"{path} must be owned by this user and have mode 0600")
-    return path.read_bytes().strip()
-
-
-def hash_password(password: str) -> str:
-    """Return a self-contained scrypt password-verifier string."""
-    salt = secrets.token_bytes(SALT_BYTES)
-    digest = hashlib.scrypt(
-        password.encode("utf-8"),
-        salt=salt,
-        n=SCRYPT_N,
-        r=SCRYPT_R,
-        p=SCRYPT_P,
-        dklen=KEY_BYTES,
-    )
-    fields = [
-        "scrypt",
-        str(SCRYPT_N),
-        str(SCRYPT_R),
-        str(SCRYPT_P),
-        base64.urlsafe_b64encode(salt).decode("ascii"),
-        base64.urlsafe_b64encode(digest).decode("ascii"),
-    ]
-    return "$".join(fields)
-
-
-def verify_password(password: str, encoded: bytes) -> bool:
-    """Verify a password without revealing whether a field matched."""
-    try:
-        algorithm, n, r, p, salt_text, expected_text = encoded.decode("ascii").split("$")
-        if algorithm != "scrypt":
-            return False
-        salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))
-        expected = base64.urlsafe_b64decode(expected_text.encode("ascii"))
-        actual = hashlib.scrypt(
-            password.encode("utf-8"),
-            salt=salt,
-            n=int(n),
-            r=int(r),
-            p=int(p),
-            dklen=len(expected),
-        )
-    except (ValueError, UnicodeError, TypeError):
-        return False
-    return hmac.compare_digest(actual, expected)
-
-
-def _load_auth_files(directory: Path) -> tuple[bytes, bytes]:
-    password_hash = _private_file(directory / PASSWORD_FILE)
-    session_secret = _private_file(directory / SESSION_SECRET_FILE)
-    if not password_hash or not session_secret:
-        raise RuntimeError(f"{directory} contains an empty authentication file")
-    return password_hash, session_secret
-
-
-def create_app(auth_dir: str | Path | None = None) -> Flask:
-    """Create the Flask app; authentication files are loaded per request."""
+def create_app(
+    auth_dir: str | Path | None = None,
+    password_file: str | Path | None = None,
+    *,
+    api: Any | None = None,
+) -> Flask:
+    """Create the authenticated OmniLine web application."""
     app = Flask(__name__)
-    directory = _auth_dir(auth_dir)
-    try:
-        app.secret_key = _private_file(directory / SESSION_SECRET_FILE)
-    except FileNotFoundError:
-        pass
-    app.config.update(
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("OMNILINE_COOKIE_SECURE") == "1",
-        SESSION_COOKIE_NAME="__Host-omniline_session"
-        if os.environ.get("OMNILINE_COOKIE_SECURE") == "1"
-        else "omniline_session",
+    config = load_config()
+    auth_root = Path(auth_dir).expanduser() if auth_dir else None
+    access_log = auth_root / "access.log" if auth_root else config.web_access_log
+    install_auth(
+        app,
+        auth_dir,
+        password_file,
+        access_log=access_log,
+        max_failed_attempts=config.web_max_failed_attempts,
+        failed_attempt_window_seconds=config.web_failed_attempt_window_seconds,
     )
+    app.config["OMNILINE_API"] = api
 
-    @app.before_request
-    def authenticate():
-        if app.secret_key is None:
-            try:
-                app.secret_key = _private_file(directory / SESSION_SECRET_FILE)
-            except (OSError, RuntimeError):
-                return "authentication is not configured", 503
-        if request.endpoint in {"login", "static"}:
-            return
-        if not session.get("authenticated", False):
-            return redirect(url_for("login"))
+    def backend() -> Any:
+        selected = app.config.get("OMNILINE_API")
+        if selected is not None:
+            return selected
+        from okline import OkLine
 
-    @app.route("/login", methods=["GET", "POST"])
-    def login():
-        if request.method == "POST":
-            password_hash, _ = _load_auth_files(directory)
-            if verify_password(request.form.get("password", ""), password_hash):
-                session.clear()
-                session["authenticated"] = True
-                return redirect(url_for("index"))
-            return "login failed", 401
-        return (
-            "<!doctype html><title>OmniLine login</title>"
-            '<form method="post"><label>Password '
-            '<input type="password" name="password" autofocus></label> '
-            '<button type="submit">Log in</button></form>'
-        )
+        config = load_config()
+        selected = OkLine.from_tokens_file(str(config.tokens_file))
+        if not getattr(selected.tokens, "access_token", None):
+            raise RuntimeError("session file has no access token; log in again")
+        app.config["OMNILINE_API"] = selected
+        return selected
 
-    @app.route("/logout", methods=["POST"])
-    def logout():
-        session.clear()
-        return redirect(url_for("login"))
+    def chats() -> list[uflChat]:
+        result = list_chats(backend())
+        config = load_config()
+        for chat in result:
+            chat.pinned = chat.id in config.pinned_chats
+        return sort_chats(result)
+
+    @app.context_processor
+    def common_template_values() -> dict[str, Any]:
+        return {
+            "theme": "light" if request.args.get("theme") == "light" else "dark",
+            "message_display_text": message_display_text,
+        }
 
     @app.route("/")
     def index():
-        return "omniline web"
+        try:
+            return render_template("index.html", chats=chats(), selected=None)
+        except (OSError, RuntimeError, ValueError):
+            return render_template("error.html"), 503
 
+    @app.route("/chat/<path:chat_id>")
+    def chat_view(chat_id: str):
+        try:
+            available = chats()
+            selected = next((chat for chat in available if chat.id == chat_id), None)
+            if selected is None:
+                abort(404)
+            messages = list(recent_messages(backend(), selected, load_config().history_limit))
+            messages.sort(key=lambda message: message.created_time or -1)
+            mids = sorted({message.from_mid for message in messages if message.from_mid})
+            names = resolve_contact_names(backend(), mids)
+            media_messages = {
+                message.id: media_reference(message)
+                for message in messages
+                if media_reference(message) is not None
+            }
+            sticker_messages = {
+                message.id: sticker_reference(message)
+                for message in messages
+                if sticker_reference(message) is not None
+            }
+            return render_template(
+                "index.html", chats=available, selected=selected,
+                messages=messages, sender_names=names, media_messages=media_messages,
+                sticker_messages=sticker_messages,
+            )
+        except (OSError, RuntimeError, ValueError):
+            return render_template("error.html"), 503
+
+    @app.route("/media/<path:chat_id>/<message_id>")
+    def media_view(chat_id: str, message_id: str):
+        """Serve one authorized media object; never trust client paths."""
+        try:
+            selected = next((chat for chat in chats() if chat.id == chat_id), None)
+            if selected is None:
+                abort(404)
+            messages = recent_messages(backend(), selected, load_config().history_limit)
+            message = next((item for item in messages if item.id == message_id), None)
+            if message is None:
+                abort(404)
+            data, reference = download_media(backend(), message)
+            mime = reference["mime"]
+            if mime.endswith("/*"):
+                mime = {
+                    "image/*": "image/jpeg",
+                    "video/*": "video/mp4",
+                    "audio/*": "audio/mpeg",
+                }.get(mime, "application/octet-stream")
+            return Response(data, mimetype=mime, headers={"Content-Disposition": "inline"})
+        except (OSError, RuntimeError, ValueError):
+            return "media unavailable", 404
+
+    @app.template_filter("message_time")
+    def message_time(value: int | None) -> str:
+        if value is None:
+            return ""
+        return datetime.fromtimestamp(value / 1000, TAIPEI).strftime("%m-%d %H:%M")
+
+    @app.template_filter("chat_time")
+    def chat_time(value: str) -> str:
+        return value[5:16].replace("T", " ") if value else ""
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)  # type: ignore[method-assign]
     return app
 
 
-def initialize_auth(directory: str | Path | None = None) -> None:
-    """Interactively create the two local authentication files."""
-    target = _auth_dir(directory)
-    target.mkdir(mode=0o700, parents=True, exist_ok=True)
-    password = getpass.getpass("OmniLine web password: ")
-    confirmation = getpass.getpass("Repeat password: ")
-    if not password or not hmac.compare_digest(password, confirmation):
-        raise SystemExit("passwords are empty or do not match")
-    (target / PASSWORD_FILE).write_text(hash_password(password) + "\n", encoding="ascii")
-    (target / SESSION_SECRET_FILE).write_bytes(secrets.token_bytes(32))
-    for name in (PASSWORD_FILE, SESSION_SECRET_FILE):
-        (target / name).chmod(0o600)
-    print(f"created {target / PASSWORD_FILE}")
-    print(f"created {target / SESSION_SECRET_FILE}")
-
-
-def run_web(host: str = "127.0.0.1", port: int = 1730, *, init_auth: bool = False) -> int:
+def run_web(
+    host: str = "127.0.0.1",
+    port: int = 1730,
+    *,
+    init_auth: bool = False,
+    password_file: str | Path | None = None,
+) -> int:
     """Run the development server or initialize web authentication."""
     if init_auth:
         initialize_auth()
         return 0
-    app.run(host=host, port=port)
+    create_app(password_file=password_file).run(host=host, port=port)
     return 0
 
 
 app = create_app()
-app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)  # type: ignore[method-assign]

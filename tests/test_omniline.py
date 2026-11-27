@@ -9,11 +9,15 @@ from typing import Any
 
 from okline.entities import Contact
 from omniline.chat_service import (
+    download_media,
     find_chats,
     list_chats,
     mark_chat_read,
+    media_reference,
+    message_display_text,
     recent_messages,
     resolve_contact_names,
+    sticker_reference,
 )
 from omniline.cli import write_history
 from omniline.tui import TuiState, _first_url, _wrap_display_cells
@@ -196,6 +200,58 @@ def test_message_json_is_serializable():
     message = recent_messages(api, uflContact(CONTACT_MID, "Alice"), 1)[0]
 
     assert json.loads(json.dumps(message.to_dict(), ensure_ascii=False))["text"] == "hello"
+
+
+def test_media_reference_and_download_use_observable_metadata():
+    message = uflMessage(
+        id="media-1",
+        content_type=1,
+        raw={"contentMetadata": {"SID": "m", "OID": "object-1", "FILE_NAME": "x.jpg"}},
+    )
+    reference = media_reference(message)
+    assert reference == {
+        "kind": "image",
+        "sid": "m",
+        "oid": "object-1",
+        "name": "x.jpg",
+        "mime": "image/*",
+    }
+
+    class Obs:
+        def download_object(self, service: str, sid: str, oid: str) -> bytes:
+            assert (service, sid, oid) == ("talk", "m", "object-1")
+            return b"image-bytes"
+
+    api = SimpleNamespace(obs=Obs())
+    assert download_media(api, message) == (b"image-bytes", reference)
+
+    inferred = uflMessage(
+        id="media-2",
+        content_type=1,
+        raw={"contentMetadata": {"MEDIA_CONTENT_INFO": '{"extension":"jpeg"}'}},
+    )
+    assert media_reference(inferred) == {
+        "kind": "image",
+        "sid": "m",
+        "oid": "media-2",
+        "name": "image-media-2",
+        "mime": "image/jpeg",
+    }
+
+    sticker = uflMessage(
+        id="sticker-1",
+        content_type=7,
+        raw={"contentMetadata": {"STKPKGID": "11538", "STKID": "51626501"}},
+    )
+    sticker_url = sticker_reference(sticker)
+    assert sticker_url is not None
+    assert sticker_url["url"].endswith("/51626501/ANDROID/sticker.png")
+    flex = uflMessage(
+        id="flex-1",
+        content_type=22,
+        raw={"contentMetadata": {"ALT_TEXT": "calendar activity"}},
+    )
+    assert message_display_text(flex) == "calendar activity"
 
 
 def test_cli_history_does_not_emit_raw_backend_payloads():

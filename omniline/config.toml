@@ -22,4 +22,8 @@ send_confirmation = true
 send_only_on_fixed_lines = true
 
 [web]
-theme_file = "themes/dark.toml"
+# Web presentation uses the CSS files in omniline/static/.
+# The theme_file setting above belongs to the TUI; TOML is not CSS.
+access_log = "~/.omniline/access.log"
+max_failed_attempts = 5
+failed_attempt_window_seconds = 86400

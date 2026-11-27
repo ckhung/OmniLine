@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from okline.entities import Contact, Group
@@ -9,6 +10,96 @@ from okline.entities import Contact, Group
 from .ufl import uflChat, uflContact, uflGroup, uflMessage
 
 MESSAGE_BOX_BATCH_SIZE = 100
+MEDIA_TYPES = {1: "image", 2: "video", 3: "audio", 14: "file"}
+
+
+def sticker_reference(message: uflMessage) -> dict[str, str] | None:
+    """Return the public LINE sticker CDN URL and accessible label."""
+    if message.content_type != 7:
+        return None
+    metadata = message.raw.get("contentMetadata", {})
+    package_id = metadata.get("STKPKGID") if isinstance(metadata, dict) else None
+    sticker_id = metadata.get("STKID") if isinstance(metadata, dict) else None
+    if not package_id or not sticker_id:
+        return None
+    return {
+        "package_id": str(package_id),
+        "sticker_id": str(sticker_id),
+        "url": f"https://stickershop.line-scdn.net/stickershop/v1/sticker/{sticker_id}/ANDROID/sticker.png",
+        "alt": str(metadata.get("STKTXT") or "Sticker"),
+    }
+
+
+def message_display_text(message: uflMessage) -> str:
+    """Return an informative fallback for non-text messages."""
+    metadata = message.raw.get("contentMetadata", {})
+    if isinstance(metadata, dict):
+        if message.content_type == 22:
+            return str(metadata.get("ALT_TEXT") or "[interactive message]")
+        if message.content_type == 18:
+            return "[chat activity]"
+        if message.content_type == 15:
+            location = message.raw.get("location") or {}
+            if isinstance(location, dict):
+                return "📍 " + " — ".join(
+                    value for value in (location.get("title"), location.get("address")) if value
+                )
+            return "[location]"
+        if message.content_type == 14:
+            return f"[file: {metadata.get('FILE_NAME') or 'file'}]"
+    return message.text or f"[{message.availability}]"
+
+
+def media_reference(message: uflMessage) -> dict[str, str] | None:
+    """Return the safe OBS reference for a media message, when available."""
+    kind = MEDIA_TYPES.get(message.content_type)
+    raw = message.raw
+    metadata = raw.get("contentMetadata", {}) if isinstance(raw, dict) else {}
+    if not kind or not isinstance(metadata, dict):
+        return None
+    sid = metadata.get("SID") or metadata.get("sid") or "m"
+    oid = metadata.get("OID") or metadata.get("oid") or message.id
+    if not isinstance(sid, str) or not isinstance(oid, str) or not sid or not oid:
+        return None
+    media_info: dict[str, Any] = {}
+    encoded_info = metadata.get("MEDIA_CONTENT_INFO")
+    if isinstance(encoded_info, str):
+        try:
+            parsed = json.loads(encoded_info)
+            if isinstance(parsed, dict):
+                media_info = parsed
+        except json.JSONDecodeError:
+            pass
+    name = metadata.get("FILE_NAME") or metadata.get("fileName") or f"{kind}-{message.id}"
+    extension = str(media_info.get("extension") or "").lower()
+    mime = metadata.get("MIME_TYPE") or metadata.get("mimeType") or {
+        "jpeg": "image/jpeg",
+        "jpg": "image/jpeg",
+        "png": "image/png",
+        "gif": "image/gif",
+        "webp": "image/webp",
+    }.get(extension) or {
+        "image": "image/*",
+        "video": "video/*",
+        "audio": "audio/*",
+        "file": "application/octet-stream",
+    }[kind]
+    return {"kind": kind, "sid": sid, "oid": oid, "name": str(name), "mime": str(mime)}
+
+
+def download_media(api: Any, message: uflMessage) -> tuple[bytes, dict[str, str]]:
+    """Download one media message through OkLine's authenticated media path."""
+    reference = media_reference(message)
+    if reference is None:
+        raise ValueError("message has no downloadable media reference")
+    if message.raw.get("chunks") and hasattr(api.e2ee, "download_sealed_media"):
+        result = api.e2ee.download_sealed_media(message.raw, info=True)
+        data, info = result if isinstance(result, tuple) else (result, {})
+        if isinstance(info, dict):
+            reference["name"] = str(info.get("name") or reference["name"])
+            reference["mime"] = str(info.get("mime") or reference["mime"])
+        return data, reference
+    return api.obs.download_object("talk", reference["sid"], reference["oid"]), reference
 
 
 def message_boxes_by_id(api: Any, ids: list[str]) -> dict[str, dict[str, Any]]:

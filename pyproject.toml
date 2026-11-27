@@ -75,7 +75,7 @@ omniline = "omniline.__main__:main"
 include = ["omniline*"]
 
 [tool.setuptools.package-data]
-omniline = ["config.toml", "themes/*.toml"]
+omniline = ["config.toml", "themes/*.toml", "templates/*.html", "static/*.css", "static/*.js"]
 
 # ---------------------------------------------------------------------------
 # Tooling

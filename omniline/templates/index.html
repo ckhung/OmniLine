@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if selected %}{{ selected.name }} · {% endif %}OmniLine</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='shared.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename=theme + '.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <h1><a href="{{ url_for('index') }}">OmniLine</a></h1>
+    <nav aria-label="Application">
+      <a href="{{ url_for('index', theme='light' if theme == 'dark' else 'dark') }}">{{ 'Light' if theme == 'dark' else 'Dark' }} theme</a>
+      <form method="post" action="{{ url_for('logout') }}"><button type="submit">Log out</button></form>
+    </nav>
+  </header>
+  <main class="messenger" data-selected="{{ 'true' if selected else 'false' }}">
+    <a class="skip-link" href="#conversation-heading">{% if selected %}Jump to conversation{% else %}Choose a conversation{% endif %}</a>
+    <section class="chat-list" aria-labelledby="chat-list-heading">
+      <h2 id="chat-list-heading">Chats</h2>
+      {% if chats %}
+      <ul>
+        {% for chat in chats %}
+        <li class="chat-row{% if selected and chat.id == selected.id %} selected{% endif %}">
+          <a href="{{ url_for('chat_view', chat_id=chat.id, theme=theme) }}">
+            <span class="chat-name">{% if chat.pinned %}★ {% endif %}{{ chat.name or chat.id }}</span>
+            {% if chat.unread_count %}<strong class="unread">{{ chat.unread_count }}</strong>{% endif %}
+            <small>{{ chat.last_message_time|chat_time }}</small>
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<p class="empty">No conversations.</p>{% endif %}
+    </section>
+    <section class="conversation" aria-labelledby="conversation-heading">
+      {% if selected %}
+      <header class="conversation-header">
+        <a class="back-link" href="{{ url_for('index', theme=theme) }}">← Chats</a>
+        <h2 id="conversation-heading">{{ selected.name or selected.id }}</h2>
+        <p>{{ selected.kind }}{% if selected.kind == 'group' %} · {{ selected.member_count }} members{% endif %}</p>
+      </header>
+      <ol class="messages" aria-label="Conversation history">
+        {% for message in messages %}
+        <li class="message {% if message.from_mid == (config.get('OMNILINE_API').tokens.mid if config.get('OMNILINE_API') and config.get('OMNILINE_API').tokens else '') %}outgoing{% else %}incoming{% endif %}{% if message.content_type == 22 %} interactive{% endif %}">
+          {% if message.from_mid != (config.get('OMNILINE_API').tokens.mid if config.get('OMNILINE_API') and config.get('OMNILINE_API').tokens else '') %}<span class="sender">{{ sender_names.get(message.from_mid, selected.name if selected.kind == 'contact' else message.from_mid or 'Unknown') }}</span>{% endif %}
+          {% set media = media_messages.get(message.id) if media_messages is defined else none %}
+          {% if media and media.kind == 'image' %}
+          <a href="{{ url_for('media_view', chat_id=selected.id, message_id=message.id) }}"><img src="{{ url_for('media_view', chat_id=selected.id, message_id=message.id) }}" alt="{{ media.name }}" loading="lazy"></a>
+          {% elif sticker_messages is defined and sticker_messages.get(message.id) %}
+          {% set sticker = sticker_messages.get(message.id) %}
+          <a href="{{ sticker.url }}"><img class="sticker" src="{{ sticker.url }}" alt="{{ sticker.alt }}" loading="lazy"></a>
+          {% elif media %}
+          <p><a href="{{ url_for('media_view', chat_id=selected.id, message_id=message.id) }}">{{ media.kind }}: {{ media.name }}</a></p>
+          {% else %}
+          <p>{{ message_display_text(message) }}</p>
+          {% endif %}
+          <time datetime="{{ message.created_time|message_time }}">{{ message.created_time|message_time }}</time>
+        </li>
+        {% else %}<li class="empty">No messages in the recent history.</li>{% endfor %}
+      </ol>
+      <p class="notice">Read-only view. Recent history may be bounded by the server.</p>
+      {% else %}
+      <div class="welcome"><h2 id="conversation-heading">Select a chat</h2><p>Choose a conversation to read its recent history.</p></div>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

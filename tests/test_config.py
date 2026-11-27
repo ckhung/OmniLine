@@ -20,6 +20,9 @@ def test_load_config_resolves_theme_files_relative_to_config(tmp_path: Path) -> 
     loaded = load_config(str(config))
 
     assert loaded.tokens_file == tmp_path / "session.json"
+    assert loaded.web_access_log == tmp_path / "access.log"
+    assert loaded.web_max_failed_attempts == 5
+    assert loaded.web_failed_attempt_window_seconds == 300
     assert loaded.pinned_chats == ["C1"]
     assert loaded.history_limit == 12
     assert loaded.tui_theme["list-panel"] == "bg:#123456"
