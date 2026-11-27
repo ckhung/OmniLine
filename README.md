@@ -91,6 +91,7 @@ the rolling failure limit:
 [web]
 max_failed_attempts = 5
 failed_attempt_window_seconds = 300
+session_lifetime_hours = 24
 ```
 
 After five failed attempts, further attempts are rejected until the rolling
@@ -98,6 +99,10 @@ five-minute window expires. The current deployment assumes one Gunicorn
 worker, so the access log itself is the shared rate-limit state. If multiple
 workers are introduced later, replace this with a transactional shared store
 such as SQLite or Redis.
+
+Successful logins create permanent Flask sessions that expire after 24 hours.
+The expiration is absolute rather than extended on every request, so a user
+must authenticate again after the configured lifetime.
 
 ### Local HTTP development server
 
@@ -144,6 +149,72 @@ uv run gunicorn \
 attribute. It does not bypass password checking. Password checking always
 occurs; there is no authentication-bypass environment variable.
 
+### Optional Fail2ban IP bans
+
+The application limiter is global. Fail2ban can add a second, IP-specific
+layer with longer bans. Create `/etc/fail2ban/filter.d/omniline.conf`:
+
+```ini
+[Definition]
+# Fail2ban removes the matched date before applying failregex.
+datepattern = "time":"{DATE}",
+failregex = ^.*"result":"(?:failure|blocked)".*"remote_addr":"<HOST>".*$
+ignoreregex =
+```
+
+The `datepattern` is important for this JSON-lines format. Some Fail2ban
+versions do not automatically recognize the embedded ISO-8601 timestamp; when
+that happens, `fail2ban-regex` reports no matches or no usable timestamps.
+The `failregex` therefore matches the log record after the timestamp has been
+removed.
+
+For example, create `/etc/fail2ban/jail.d/omniline.local`:
+
+```ini
+[omniline]
+enabled = true
+filter = omniline
+logpath = /home/YOUR_USER/.omniline/access.log
+maxretry = 5
+findtime = 300
+bantime = 3600
+```
+
+Replace `YOUR_USER`, then test and reload:
+
+```bash
+sudo fail2ban-regex \
+    /home/YOUR_USER/.omniline/access.log \
+    /etc/fail2ban/filter.d/omniline.conf
+sudo fail2ban-client reload
+sudo fail2ban-client status omniline
+```
+
+Apache must preserve the client address, and the Apache-to-Gunicorn path must
+include:
+
+```apache
+ProxyAddHeaders On
+```
+
+The application trusts one forwarded proxy hop. Gunicorn must remain bound to
+`127.0.0.1`; otherwise clients could forge `X-Forwarded-For`.
+
+### Common security precautions
+
+- Use HTTPS in deployment and set `OMNILINE_COOKIE_SECURE=1` for Gunicorn.
+- Keep Gunicorn on loopback and use Apache as the public TLS boundary.
+- Never enable Flask debug mode in deployment.
+- Keep `password.hash`, `session.secret`, and `access.log` private with mode
+  `0600`; rotate the access log and retain it only as long as needed.
+- Use a real password. A single-space password is suitable only for temporary
+  testing.
+- Add CSRF protection before implementing any state-changing operation such as
+  sending, deleting, pinning, or changing settings.
+- Keep forwarded-header trust limited to the known Apache proxy hop.
+- Return generic backend errors and never expose tokens, message payloads, or
+  encrypted material in HTML responses or logs.
+
 ### Apache2 path-specific reverse proxy
 
 If Apache already serves other pages, add the following inside the existing
@@ -152,6 +223,7 @@ HTTPS `<VirtualHost>` block. It makes only `/omniline/` reach Gunicorn:
 ```
 RedirectMatch 301 ^/omniline$ /omniline/
 
+ProxyAddHeaders On
 ProxyPass        /omniline/ http://127.0.0.1:8001/
 ProxyPassReverse /omniline/ http://127.0.0.1:8001/
 

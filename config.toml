@@ -40,3 +40,4 @@ access_log = "~/.omniline/access.log"
 # Allow at most this many failed attempts during the rolling window.
 max_failed_attempts = 5
 failed_attempt_window_seconds = 300
+session_lifetime_hours = 24

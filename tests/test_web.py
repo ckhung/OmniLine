@@ -23,18 +23,22 @@ def test_password_hash_verification() -> None:
 
 def test_login_rejects_wrong_password_and_accepts_correct_password(tmp_path: Path) -> None:
     _auth_files(tmp_path, "correct")
-    client = create_app(tmp_path).test_client()
+    app = create_app(tmp_path)
+    assert app.config["PERMANENT_SESSION_LIFETIME"].total_seconds() == 24 * 60 * 60
+    client = app.test_client()
 
     response = client.get("/")
     assert response.status_code == 302
     assert response.headers["Location"] == "/login"
 
     response = client.post("/login", data={"password": "wrong"})
-    assert response.status_code == 401
+    assert response.status_code == 303
+    assert client.get(response.headers["Location"]).status_code == 200
 
     response = client.post("/login", data={"password": "correct"})
     assert response.status_code == 302
     assert response.headers["Location"] == "/"
+    assert "Expires=" in response.headers["Set-Cookie"]
     assert client.get("/").status_code == 200
     assert b"OmniLine" in client.get("/").data
 
@@ -46,7 +50,7 @@ def test_temporary_password_file_overrides_default(tmp_path: Path) -> None:
     temporary.chmod(0o600)
     client = create_app(tmp_path, password_file=temporary).test_client()
 
-    assert client.post("/login", data={"password": "default"}).status_code == 401
+    assert client.post("/login", data={"password": "default"}).status_code == 303
     assert client.post("/login", data={"password": "temporary"}).status_code == 302
 
 
@@ -56,7 +60,7 @@ def test_failed_attempts_are_logged_and_limited(tmp_path: Path) -> None:
 
     responses = [client.post("/login", data={"password": "wrong"}) for _ in range(6)]
 
-    assert [response.status_code for response in responses] == [401, 401, 401, 401, 401, 429]
+    assert [response.status_code for response in responses] == [303, 303, 303, 303, 303, 303]
     records = [json.loads(line) for line in (tmp_path / "access.log").read_text().splitlines()]
     assert not (tmp_path / "omniline.db").exists()
     assert [record["result"] for record in records] == [

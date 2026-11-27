@@ -11,6 +11,7 @@ import os
 import secrets
 import stat
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,7 @@ def install_auth(
     access_log: str | Path,
     max_failed_attempts: int,
     failed_attempt_window_seconds: int,
+    session_lifetime_hours: int,
 ) -> None:
     """Install the password gate and authentication routes on a Flask app."""
     directory = _auth_dir(auth_dir)
@@ -154,6 +156,8 @@ def install_auth(
         SESSION_COOKIE_NAME="__Host-omniline_session"
         if os.environ.get("OMNILINE_COOKIE_SECURE") == "1"
         else "omniline_session",
+        PERMANENT_SESSION_LIFETIME=timedelta(hours=session_lifetime_hours),
+        SESSION_REFRESH_EACH_REQUEST=False,
     )
 
     @app.before_request
@@ -178,17 +182,25 @@ def install_auth(
             # store such as SQLite or Redis instead of parsing this file.
             if _failed_attempts(access_log_path, failed_attempt_window_seconds) >= max_failed_attempts:
                 _log_attempt(access_log_path, "blocked", request.remote_addr)
-                return "too many failed login attempts", 429
+                return redirect(url_for("login", blocked="1"), code=303)
             password_hash, _ = _load_auth_files(directory, selected_password_file)
             if verify_password(request.form.get("password", ""), password_hash):
                 _log_attempt(access_log_path, "success", request.remote_addr)
                 session.clear()
+                session.permanent = True
                 session["authenticated"] = True
                 return redirect(url_for("index"))
             _log_attempt(access_log_path, "failure", request.remote_addr)
-            return "login failed", 401
+            return redirect(url_for("login", failed="1"), code=303)
+        message = ""
+        if request.args.get("blocked"):
+            message = "too many failed login attempts"
+        elif request.args.get("failed"):
+            message = "login failed"
+        notice = f'<p role="alert">{message}</p>' if message else ""
         return (
             "<!doctype html><title>OmniLine login</title>"
+            f"{notice}"
             '<form method="post"><label>Password '
             '<input type="password" name="password" autofocus></label> '
             '<button type="submit">Log in</button></form>'

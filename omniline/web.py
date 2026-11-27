@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, abort, render_template, request
+from markupsafe import Markup, escape
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .chat_service import (
@@ -21,6 +23,8 @@ from .chat_service import (
 from .config import load_config
 from .ufl import TAIPEI, sort_chats, uflChat
 from .web_auth import initialize_auth, install_auth
+
+URL_PATTERN = re.compile(r"https?://[^\s<]+")
 
 
 def create_app(
@@ -41,6 +45,7 @@ def create_app(
         access_log=access_log,
         max_failed_attempts=config.web_max_failed_attempts,
         failed_attempt_window_seconds=config.web_failed_attempt_window_seconds,
+        session_lifetime_hours=config.web_session_lifetime_hours,
     )
     app.config["OMNILINE_API"] = api
 
@@ -140,7 +145,28 @@ def create_app(
     def chat_time(value: str) -> str:
         return value[5:16].replace("T", " ") if value else ""
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)  # type: ignore[method-assign]
+    @app.template_filter("linkify")
+    def linkify(value: str) -> Markup:
+        """Turn message URLs into safe, clickable links."""
+        parts: list[str] = []
+        position = 0
+        for match in URL_PATTERN.finditer(value):
+            parts.append(str(escape(value[position : match.start()])))
+            url = match.group(0).rstrip(".,;:!?)]}")
+            trailing = match.group(0)[len(url) :]
+            href = str(escape(url))
+            label = str(escape(url))
+            parts.append(
+                f'<a href="{href}" rel="noopener noreferrer" target="_blank">{label}</a>'
+            )
+            parts.append(str(escape(trailing)))
+            position = match.end()
+        parts.append(str(escape(value[position:])))
+        return Markup("".join(parts))
+
+    app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+        app.wsgi_app, x_for=1, x_prefix=1, x_proto=1
+    )
     return app
 
 

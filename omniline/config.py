@@ -58,6 +58,7 @@ class AppConfig:
     web_access_log: Path
     web_max_failed_attempts: int
     web_failed_attempt_window_seconds: int
+    web_session_lifetime_hours: int
 
     def save_pinned_chats(self, chats: list[str]) -> None:
         """Persist shared pins without rewriting unrelated user comments."""
@@ -211,6 +212,13 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
         or failed_window < 1
     ):
         raise ValueError("[web].failed_attempt_window_seconds must be a positive integer")
+    session_lifetime = web.get("session_lifetime_hours", 24)
+    if (
+        isinstance(session_lifetime, bool)
+        or not isinstance(session_lifetime, int)
+        or session_lifetime < 1
+    ):
+        raise ValueError("[web].session_lifetime_hours must be a positive integer")
     return AppConfig(
         path=path,
         tokens_file=tokens,
@@ -225,4 +233,5 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
         web_access_log=access_log,
         web_max_failed_attempts=max_failed,
         web_failed_attempt_window_seconds=failed_window,
+        web_session_lifetime_hours=session_lifetime,
     )

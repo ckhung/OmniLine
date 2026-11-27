@@ -54,7 +54,7 @@
           {% elif media %}
           <p><a href="{{ url_for('media_view', chat_id=selected.id, message_id=message.id) }}">{{ media.kind }}: {{ media.name }}</a></p>
           {% else %}
-          <p>{{ message_display_text(message) }}</p>
+          <p>{{ message_display_text(message)|linkify }}</p>
           {% endif %}
           <time datetime="{{ message.created_time|message_time }}">{{ message.created_time|message_time }}</time>
         </li>

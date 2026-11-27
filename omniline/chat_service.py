@@ -92,7 +92,10 @@ def download_media(api: Any, message: uflMessage) -> tuple[bytes, dict[str, str]
     reference = media_reference(message)
     if reference is None:
         raise ValueError("message has no downloadable media reference")
-    if message.raw.get("chunks") and hasattr(api.e2ee, "download_sealed_media"):
+    if (
+        (message.raw.get("chunks") or (message.raw.get("contentMetadata") or {}).get("ENC_KM"))
+        and hasattr(api.e2ee, "download_sealed_media")
+    ):
         result = api.e2ee.download_sealed_media(message.raw, info=True)
         data, info = result if isinstance(result, tuple) else (result, {})
         if isinstance(info, dict):
@@ -230,7 +233,20 @@ def recent_messages(api: Any, chat: uflChat, count: int) -> list[uflMessage]:
                     else "[encrypted]"
                 )
         message = uflMessage.from_okline(decoded)
-        if decoded is not raw and decoded.get("text") != "[encrypted]":
+        if (
+            decoded is not raw
+            and (decoded.get("contentMetadata") or {}).get("ENC_KM")
+            and raw.get("chunks")
+        ):
+            # Keep the original ciphertext alongside decrypted media metadata.
+            # OkLine's sealed-media downloader must decrypt the original chunks
+            # again to recover ENC_KM and decrypt the OBS blob.
+            message.raw["chunks"] = raw["chunks"]
+        if (
+            decoded is not raw
+            and decoded.get("text") != "[encrypted]"
+            and not (decoded.get("contentMetadata") or {}).get("ENC_KM")
+        ):
             message.raw.pop("chunks", None)
         messages.append(message)
     return messages
