@@ -26,6 +26,7 @@ def test_load_config_resolves_theme_files_relative_to_config(tmp_path: Path) -> 
     assert loaded.web_session_lifetime_hours == 24
     assert loaded.pinned_chats == ["C1"]
     assert loaded.history_limit == 12
+    assert loaded.tui_compose_height == 3
     assert loaded.tui_theme["list-panel"] == "bg:#123456"
     assert loaded.web_theme["list-panel"] == "bg:#123456"
 
@@ -76,4 +77,12 @@ def test_invalid_config_types_raise_user_facing_errors(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="tokens_file must be a string"):
+        load_config(str(config))
+
+    config.write_text(
+        '[shared]\npinned_chats = []\nhistory_limit = 50\n'
+        '[tui]\ncompose_height = 0\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="compose_height must be a positive integer"):
         load_config(str(config))

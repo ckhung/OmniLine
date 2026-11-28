@@ -6,13 +6,13 @@
 //
 // The user name is intentionally absent.  The login form contains only a
 // password.  The password verifier reads one Argon2id (or an equally strong
-// memory-hard) password hash from ~/.omniline/password.hash.  It never stores
+// memory-hard) password hash from $HERMES_HOME/.omniline/password.hash.  It never stores
 // or logs the clear-text password.  The file should be owned by the account
 // running the app and have mode 0600.
 //
 // A successful check creates a signed, HttpOnly, Secure (when HTTPS is used),
 // SameSite=Lax session cookie.  The signing key is a separate random secret
-// in ~/.omniline/session.secret; the password hash is not suitable for this.
+// in $HERMES_HOME/.omniline/session.secret; the password hash is not suitable for this.
 // All state-changing POSTs also require CSRF protection.  Failed logins get a
 // generic response and should be rate-limited at the deployment boundary.
 //
@@ -45,8 +45,8 @@ digraph FlaskArchitecture {
         color="#4C78A8";
         WSGI [label="WSGI boundary\ncreate_app()"];
         Auth [label="Flask auth gate\npassword-only login\nsession + CSRF"];
-        Hash [label="~/.omniline/password.hash\n0600; Argon2id hash"];
-        Secret [label="~/.omniline/session.secret\n0600; random signing key"];
+        Hash [label="$HERMES_HOME/.omniline/password.hash\n0600; Argon2id hash"];
+        Secret [label="$HERMES_HOME/.omniline/session.secret\n0600; random signing key"];
         Routes [label="Authenticated routes\nGET history / contacts\nPOST state changes"];
         Core [label="ufl / shared service core\nno Flask or HTTP dependencies"];
         OkLine [label="OkLine / LINE backend\ncredentials remain server-side"];

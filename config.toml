@@ -1,7 +1,8 @@
 # OmniLine configuration template.
+# Set HERMES_HOME to choose the user-data root; otherwise the OS home is used.
 # Search order:
 #   1. --config PATH
-#   2. ~/.omniline/config.toml
+#   2. $HERMES_HOME/.omniline/config.toml
 #   3. this distribution directory
 #
 # Paths may be absolute or relative to the config file's directory.  Keep
@@ -31,11 +32,14 @@ theme_file = "themes/dark.toml"
 send_confirmation = true
 # Restrict R to a message/reply line or the final new-message line.
 send_only_on_fixed_lines = true
+# Height of the message composing box in terminal rows.
+compose_height = 3
 
 [web]
 # Web presentation uses the CSS files in omniline/static/.
 # The theme_file setting above belongs to the TUI; TOML is not CSS.
 # Append JSON-lines login results to this file; relative to this config file.
+# The leading ~ is resolved against HERMES_HOME when it is set.
 access_log = "~/.omniline/access.log"
 # Allow at most this many failed attempts during the rolling window.
 max_failed_attempts = 5

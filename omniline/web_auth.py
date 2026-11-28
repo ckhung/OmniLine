@@ -17,6 +17,8 @@ from typing import Any
 
 from flask import Flask, redirect, request, session, url_for
 
+from .paths import expand_user_path, user_home
+
 AUTH_DIR_ENV = "OMNILINE_AUTH_DIR"
 PASSWORD_FILE = "password.hash"
 SESSION_SECRET_FILE = "session.secret"
@@ -28,7 +30,8 @@ SCRYPT_P = 1
 
 
 def _auth_dir(path: str | Path | None = None) -> Path:
-    return Path(path or os.environ.get(AUTH_DIR_ENV, "~/.omniline")).expanduser()
+    configured = path or os.environ.get(AUTH_DIR_ENV)
+    return expand_user_path(configured) if configured else user_home() / ".omniline"
 
 
 def _private_file(path: Path) -> bytes:
@@ -142,8 +145,8 @@ def install_auth(
 ) -> None:
     """Install the password gate and authentication routes on a Flask app."""
     directory = _auth_dir(auth_dir)
-    selected_password_file = Path(password_file).expanduser() if password_file else None
-    access_log_path = Path(access_log).expanduser()
+    selected_password_file = expand_user_path(password_file) if password_file else None
+    access_log_path = expand_user_path(access_log)
     _ensure_private_file(access_log_path)
     try:
         app.secret_key = _private_file(directory / SESSION_SECRET_FILE)

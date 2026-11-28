@@ -10,6 +10,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+from .paths import expand_user_path, user_home
+
 try:
     import tomllib
 except ModuleNotFoundError:  # Python 3.9 and 3.10
@@ -53,6 +55,7 @@ class AppConfig:
     history_limit: int
     tui_send_confirmation: bool
     tui_send_only_on_fixed_lines: bool
+    tui_compose_height: int
     tui_theme: dict[str, str]
     web_theme: dict[str, str]
     web_access_log: Path
@@ -88,7 +91,7 @@ def init_user_directory(
     source_directory: Path | None = None,
 ) -> tuple[list[Path], list[Path]]:
     """Install the distribution config and themes into a user directory."""
-    destination = directory or Path.home() / ".omniline"
+    destination = directory or user_home() / ".omniline"
     source_root = Path(__file__).resolve().parent.parent
     packaged_root = Path(__file__).resolve().parent
     source = source_directory or (
@@ -150,7 +153,7 @@ def _bool_setting(section: dict[str, Any], name: str, default: bool) -> bool:
 
 def load_config(explicit: str | None = None, tui_theme_file: str | None = None) -> AppConfig:
     """Load the first available config and its frontend-specific themes."""
-    explicit_path = Path(explicit).expanduser() if explicit else None
+    explicit_path = expand_user_path(explicit) if explicit else None
     if explicit_path and explicit_path.is_dir():
         explicit_path /= "config.toml"
     distribution = Path(__file__).resolve().parent.parent / "config.toml"
@@ -158,7 +161,7 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
     candidates = (
         [explicit_path]
         if explicit_path
-        else [Path.home() / ".omniline/config.toml", distribution, packaged]
+        else [user_home() / ".omniline/config.toml", distribution, packaged]
     )
     path = next((candidate for candidate in candidates if candidate and candidate.exists()), None)
     data = _read(path) if path else {}
@@ -171,7 +174,7 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
     token_value = paths.get("tokens_file", "tokens.json")
     if not isinstance(token_value, str):
         raise ValueError("[paths].tokens_file must be a string")
-    tokens = Path(token_value).expanduser()
+    tokens = expand_user_path(token_value)
     if not tokens.is_absolute():
         tokens = base / tokens
 
@@ -181,11 +184,11 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
             return None
         if not isinstance(value, str):
             raise ValueError("theme_file must be a string")
-        theme = Path(value).expanduser()
+        theme = expand_user_path(value)
         return theme if theme.is_absolute() else base / theme
     tui_theme = theme_path(tui)
     if tui_theme_file:
-        tui_theme = Path(tui_theme_file).expanduser()
+        tui_theme = expand_user_path(tui_theme_file)
         if not tui_theme.is_absolute():
             tui_theme = base / tui_theme
     pinned_value = shared.get("pinned_chats", [])
@@ -196,10 +199,13 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
     history_value = shared.get("history_limit", 50)
     if isinstance(history_value, bool) or not isinstance(history_value, int) or history_value < 1:
         raise ValueError("[shared].history_limit must be a positive integer")
+    compose_height = tui.get("compose_height", 3)
+    if isinstance(compose_height, bool) or not isinstance(compose_height, int) or compose_height < 1:
+        raise ValueError("[tui].compose_height must be a positive integer")
     access_log_value = web.get("access_log", "access.log")
     if not isinstance(access_log_value, str):
         raise ValueError("[web].access_log must be a string")
-    access_log = Path(access_log_value).expanduser()
+    access_log = expand_user_path(access_log_value)
     if not access_log.is_absolute():
         access_log = base / access_log
     max_failed = web.get("max_failed_attempts", 5)
@@ -228,6 +234,7 @@ def load_config(explicit: str | None = None, tui_theme_file: str | None = None) 
         history_limit=history_value,
         tui_send_confirmation=_bool_setting(tui, "send_confirmation", True),
         tui_send_only_on_fixed_lines=_bool_setting(tui, "send_only_on_fixed_lines", True),
+        tui_compose_height=compose_height,
         tui_theme=_theme(tui_theme),
         web_theme=_theme(theme_path(web)),
         web_access_log=access_log,

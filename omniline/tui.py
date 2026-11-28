@@ -859,9 +859,9 @@ def run_tui(api: Any, config: AppConfig | None = None) -> int:
     )
     compose_window = Window(
         BufferControl(state.compose_buffer),
-        height=1,
+        height=state.config.tui_compose_height,
         style="class:compose",
-        wrap_lines=False,
+        wrap_lines=True,
     )
     status_window = Window(
         FormattedTextControl(lambda: [("class:status", state.status_text())]),

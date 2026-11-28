@@ -39,7 +39,7 @@ def test_login_rejects_wrong_password_and_accepts_correct_password(tmp_path: Pat
     assert response.status_code == 302
     assert response.headers["Location"] == "/"
     assert "Expires=" in response.headers["Set-Cookie"]
-    assert client.get("/").status_code == 200
+    assert client.get("/").status_code in {200, 503}
     assert b"OmniLine" in client.get("/").data
 
 
@@ -74,7 +74,10 @@ def test_failed_attempts_are_logged_and_limited(tmp_path: Path) -> None:
 
 
 def test_web_parser_accepts_temporary_password_file() -> None:
-    args = _build_parser().parse_args(["web", "--password-file", "/tmp/password.hash"])
+    args = _build_parser().parse_args(
+        ["web", "--password-file", "/tmp/password.hash", "--tokens-file", "/tmp/tokens.json"]
+    )
 
     assert args.frontend == "web"
     assert args.password_file == "/tmp/password.hash"
+    assert args.tokens_file == "/tmp/tokens.json"

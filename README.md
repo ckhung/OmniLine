@@ -19,7 +19,7 @@ or
 pip install omniline
 omniline init
 ```
-`omniline init` creates `~/.omniline/` and copies the default configuration and themes. Existing files are preserved; use `omniline init --force` to replace them. The virtual environment may be located elsewhere.
+`omniline init` creates `$HERMES_HOME/.omniline/` and copies the default configuration and themes. Existing files are preserved; use `omniline init --force` to replace them. The virtual environment may be located elsewhere.
 
 ## Logging In
 
@@ -47,9 +47,9 @@ commands.
 - Search and compose overlays: enter text, submit it, or cancel with the shown
   keys. Sending follows the configured confirmation and cursor-line safeguards.
 
-Important settings are in `~/.omniline/config.toml`: the token-file path, shared
+Important settings are in `$HERMES_HOME/.omniline/config.toml`: the token-file path, shared
 pinned chats, history limit, TUI theme, and conservative sending options. Dark
-and light themes are stored under `~/.omniline/themes/`.
+and light themes are stored under `$HERMES_HOME/.omniline/themes/`.
 
 ![tui screenshot](docs/assets/tui.png)
 
@@ -75,15 +75,15 @@ omniline web --init-auth
 This creates:
 
 ```
-~/.omniline/password.hash
-~/.omniline/session.secret
+$HERMES_HOME/.omniline/password.hash
+$HERMES_HOME/.omniline/session.secret
 ```
 
 The password is never stored in clear text. Both files are created with
 restrictive permissions and must remain private. Authentication is enabled by
 default and is not disabled by the HTTP/HTTPS configuration.
 
-Login attempts are appended as JSON lines to `~/.omniline/access.log`; the
+Login attempts are appended as JSON lines to `$HERMES_HOME/.omniline/access.log`; the
 password itself is never logged. The `[web]` section of `config.toml` controls
 the rolling failure limit:
 
@@ -116,7 +116,7 @@ Open `http://127.0.0.1:1730/`. This server is for development only. For plain
 HTTP development, do not set `OMNILINE_COOKIE_SECURE`.
 
 For a temporary password verifier, without replacing
-`~/.omniline/password.hash`, use:
+`$HERMES_HOME/.omniline/password.hash`, use:
 
 ```
 omniline web --password-file /path/to/temporary-password.hash
@@ -124,9 +124,24 @@ omniline web --password-file /path/to/temporary-password.hash
 
 The file must contain an OmniLine scrypt verifier and have restrictive file
 permissions. The session-signing secret is still read from
-`~/.omniline/session.secret`.
+`$HERMES_HOME/.omniline/session.secret`.
 
 ### Gunicorn
+
+Gunicorn cannot pass arbitrary options directly to the WSGI application, but it
+can call OmniLine's application factory. This selects token and password files
+without adding corresponding environment variables:
+
+```
+HERMES_HOME=/h/.hermes gunicorn --chdir /h/ext/OmniLine \
+    --bind 127.0.0.1:8001 \
+    'omniline.web:create_app(tokens_file="/h/.hermes/.omniline/tokens.json", password_file="/h/.hermes/.omniline/password.hash")'
+```
+
+The single quotes are shell quoting around Gunicorn's application-factory
+expression; the inner double quotes delimit Python string arguments. This is
+equivalent to selecting `--tokens-file` and `--password-file` for `omniline web`,
+but uses the production WSGI server directly.
 
 Run Gunicorn on a loopback address:
 

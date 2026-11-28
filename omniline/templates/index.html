@@ -37,12 +37,36 @@
     <section class="conversation" aria-labelledby="conversation-heading">
       {% if selected %}
       <header class="conversation-header">
-        <a class="back-link" href="{{ url_for('index', theme=theme) }}">← Chats</a>
-        <h2 id="conversation-heading">{{ selected.name or selected.id }}</h2>
-        <p>{{ selected.kind }}{% if selected.kind == 'group' %} · {{ selected.member_count }} members{% endif %}</p>
+        {% if view_mode in ['profile', 'members'] %}
+        <a class="back-link" href="{{ url_for('chat_view', chat_id=selected.id, theme=theme) }}">← Conversation</a>
+        {% else %}
+        <h2 id="conversation-heading"><a class="conversation-title-link" href="{{ url_for('chat_profile', chat_id=selected.id, theme=theme) }}">{{ selected.name or selected.id }}</a></h2>
+        <p>{{ selected.kind }}{% if selected.kind == 'group' %} · <a href="{{ url_for('chat_members', chat_id=selected.id, theme=theme) }}">{{ selected.member_count }} members</a>{% endif %}</p>
+        {% endif %}
       </header>
+      {% if view_mode == 'profile' %}
+      <article class="profile-content">
+        <h2 id="conversation-heading">{{ selected.name or selected.id }}</h2>
+        <p><strong>Type:</strong> {{ selected.kind }}</p>
+        {% if selected.kind == 'group' %}
+        <p><strong>Members:</strong> {{ selected.member_count }}</p>
+        {% if selected.raw.get('chatName') %}<p>{{ selected.raw.get('chatName') }}</p>{% endif %}
+        {% elif selected.raw.get('statusMessage') %}
+        <p>{{ selected.raw.get('statusMessage') }}</p>
+        {% endif %}
+      </article>
+      {% elif view_mode == 'members' %}
+      <ol class="member-list" aria-label="Group members">
+        {% for mid in member_mids %}
+        <li><a href="{{ url_for('chat_view', chat_id=mid, theme=theme) }}">{{ member_names.get(mid, mid) }}</a></li>
+        {% else %}<li class="empty">No member information available.</li>{% endfor %}
+      </ol>
+      {% else %}
       <ol class="messages" aria-label="Conversation history">
+        {% set unread_boundary = 0 %}
+        {% if unread_count is defined and messages|length > unread_count %}{% set unread_boundary = messages|length - unread_count %}{% endif %}
         {% for message in messages %}
+        {% if loop.index0 == unread_boundary and unread_count is defined and unread_count > 0 %}<li class="unread-divider">Unread messages</li>{% endif %}
         <li class="message {% if message.from_mid == (config.get('OMNILINE_API').tokens.mid if config.get('OMNILINE_API') and config.get('OMNILINE_API').tokens else '') %}outgoing{% else %}incoming{% endif %}{% if message.content_type == 22 %} interactive{% endif %}">
           {% if message.from_mid != (config.get('OMNILINE_API').tokens.mid if config.get('OMNILINE_API') and config.get('OMNILINE_API').tokens else '') %}<span class="sender">{{ sender_names.get(message.from_mid, selected.name if selected.kind == 'contact' else message.from_mid or 'Unknown') }}</span>{% endif %}
           {% set media = media_messages.get(message.id) if media_messages is defined else none %}
@@ -61,6 +85,7 @@
         {% else %}<li class="empty">No messages in the recent history.</li>{% endfor %}
       </ol>
       <p class="notice">Read-only view. Recent history may be bounded by the server.</p>
+      {% endif %}
       {% else %}
       <div class="welcome"><h2 id="conversation-heading">Select a chat</h2><p>Choose a conversation to read its recent history.</p></div>
       {% endif %}

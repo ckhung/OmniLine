@@ -1,7 +1,8 @@
 # OmniLine configuration template.
+# Set HERMES_HOME to choose the user-data root; otherwise the OS home is used.
 # Search order:
 #   1. --config PATH
-#   2. ~/.omniline/config.toml
+#   2. $HERMES_HOME/.omniline/config.toml
 #   3. this distribution directory
 
 [paths]
@@ -20,10 +21,12 @@ history_limit = 50
 theme_file = "themes/dark.toml"
 send_confirmation = true
 send_only_on_fixed_lines = true
+compose_height = 3
 
 [web]
 # Web presentation uses the CSS files in omniline/static/.
 # The theme_file setting above belongs to the TUI; TOML is not CSS.
+# The leading ~ is resolved against HERMES_HOME when it is set.
 access_log = "~/.omniline/access.log"
 max_failed_attempts = 5
 failed_attempt_window_seconds = 300

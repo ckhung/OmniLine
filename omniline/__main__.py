@@ -21,7 +21,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="omniline")
     parser.add_argument("--config", default=None, help="configuration TOML file")
     frontends = parser.add_subparsers(dest="frontend", required=True)
-    init = frontends.add_parser("init", help="initialize ~/.omniline")
+    init = frontends.add_parser("init", help="initialize $HERMES_HOME/.omniline")
     init.add_argument("--force", action="store_true", help="overwrite existing files")
     web = frontends.add_parser("web", help="authenticated web frontend")
     web.add_argument("--host", default="127.0.0.1", help="development-server bind address")
@@ -32,6 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="temporary password.hash file for this web process",
     )
+    web.add_argument("--tokens-file", default=None, help="session JSON file")
     tui = frontends.add_parser("tui", help="read-only terminal UI")
     tui.add_argument("--tokens-file", default=None, help="session JSON file")
     tui.add_argument("--theme-file", default=None, help="temporary TUI theme TOML file")
@@ -79,6 +80,7 @@ def _main(argv: Sequence[str] | None = None) -> int:
                 args.port,
                 init_auth=args.init_auth,
                 password_file=args.password_file,
+                tokens_file=args.tokens_file,
             )
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"omniline: cannot run web frontend: {exc}", file=sys.stderr)
